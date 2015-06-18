@@ -34,6 +34,27 @@ data Either (a b : Set) : Set where
 data Tuple (a b : Set) : Set where
   _,_ : a -> b -> Tuple a b
 
+fst : {a b : Set} -> Tuple a b -> a
+fst (x , y) = x
+
+snd : {a b : Set} -> Tuple a b -> b
+snd (x , y) = y
+
+data Bool : Set where
+  True : Bool
+  False : Bool
+
+--Equality on nats:
+_`eq`_ : Nat -> Nat -> Bool
+Zero `eq` Zero = True
+Zero `eq` Succ _ = False
+Succ _ `eq` Zero = False
+Succ n `eq` Succ m = n `eq` m
+
+If_Then_Else_ : {T : Set} -> Bool -> T -> T -> T
+If True Then x Else y = x
+If False Then x Else y = y
+
 -------------------------------------------------------------------------------
 ----------------------               Syntax              ----------------------
 -------------------------------------------------------------------------------
@@ -56,11 +77,14 @@ data Term : Type -> Set where
   zero          : Term NAT
   succ          : (n : Term NAT) -> Term NAT
   iszero        : (n : Term NAT) -> Term BOOL
-  -- Pointer shit
-  -- Create a new cell with an initial value
-  ref           : {ty : Type} -> Term ty -> Term (POINTER ty)
+  -- We just use natural numbers as variables
+  var           : {ty : Type} -> Nat -> Term (POINTER ty)
+
+  -- Create a new cell with an initial value REPLACED BY VAR
+  --ref           : {ty : Type} -> Term ty -> Term (POINTER ty)
+
   -- Redirecting a pointer to another cell, similar to "=" in the book
-  _=>_           : {ty : Type} -> Term (POINTER ty) -> Term (POINTER ty) -> Term <>
+  _=>_          : {ty : Type} -> Term (POINTER ty) -> Term (POINTER ty) -> Term <>
   -- Storing a value in a cell
   _:=_          : {ty : Type} -> Term (POINTER ty) -> Term ty -> Term <>
   -- Sequencing side effects
@@ -74,16 +98,14 @@ data Term : Type -> Set where
 Pointer = Nat
 TypeEnv = Pointer -> Type
 
--- And of course the state itself..
-State = (f : TypeEnv) -> (p : Pointer) -> Term (f p)
-
+State = (f : TypeEnv) -> (p : Pointer) -> (Term (f p))
 
 -- The set of atomic values within the language.
 data Value : Type -> Set where
   vtrue : Value BOOL 
   vfalse : Value BOOL
   vnat : Nat -> Value NAT
-  vref : {ty : Type} -> Value ty -> Value (POINTER ty)
+  vvar : {ty : Type} -> Nat -> Value (POINTER ty)
   vnothing : Value <>
 
 natTerm : Nat -> Term NAT
@@ -95,7 +117,7 @@ natTerm (Succ k) = succ (natTerm k)
 ⌜ vtrue ⌝ = true
 ⌜ vfalse ⌝ = false
 ⌜ vnat k ⌝ = natTerm k
-⌜ vref v ⌝ = ref ⌜ v ⌝
+⌜ vvar n ⌝ = var n
 ⌜ vnothing ⌝ = <>
 
 -------------------------------------------------------------------------------
@@ -118,8 +140,8 @@ viszero (vnat (Succ x)) = vfalse
 ⟦ t ⟧ = {!!}
 
 -------------------------------------------------------------------------------
--- Small-step semantics.
--- --------------------------------------------------------------------------------
+----------------------             Small-step            ----------------------
+-------------------------------------------------------------------------------
 
 data Step  : {ty : Type} ->  State -> Term ty → State -> Term ty → Set where
   -- Pure thingies leave the state unchanged, but may contain non-pure expressions and propagate the changes made by those
@@ -132,15 +154,15 @@ data Step  : {ty : Type} ->  State -> Term ty → State -> Term ty → Set where
   E-IsZeroSucc : {s : State} {v : Value NAT} -> Step s (iszero (succ ⌜ v ⌝)) s false
   E-IsZero     : {s s' : State} {t t' : Term NAT} -> Step s t s' t' -> Step s (iszero t) s' (iszero t')
   -- Pointer thingies may use or change the state
-  E-Ref : forall {s s' : State} {ty : Type} {t t' : Term ty} -> Step s t s' t' -> Step s (ref t) s' (ref t')
+  -- Ref stores an expression in the state
+  E-=> : forall {s : State} {ty : Type} {n : Nat} {t : Term (POINTER ty)} -> Step s (var n => t) (λ tyEnv p -> {!If p `eq` n Then ! t Else s tyEnv p!}) <>
 
 
 
 
 
 
-
-valuesDoNotStep : forall {ty} -> (v : Value ty) (t : Term ty) -> Step _ ⌜ v ⌝  _ t -> Empty
+valuesDoNotStep : forall {ty} {s1 s2} -> (v : Value ty) (t : Term ty) -> Step s1 ⌜ v ⌝  s2 t -> Empty
 valuesDoNotStep vtrue t ()
 valuesDoNotStep vfalse t ()
 valuesDoNotStep (vnat x) t step = lemma x t step
@@ -148,7 +170,7 @@ valuesDoNotStep (vnat x) t step = lemma x t step
   lemma : {s s' : State} -> (n : Nat) -> (t : Term NAT) -> Step s (natTerm n) s' t -> Empty
   lemma Zero t ()
   lemma (Succ n) ._ (E-Succ {_} {_} {._} {t} step) = lemma n (t) step
-valuesDoNotStep (vref v) t step = {!!}
+valuesDoNotStep (vvar n) t step = {!!}
 valuesDoNotStep vnothing t ()
 
 
@@ -158,9 +180,9 @@ valuesDoNotStep vnothing t ()
 --preservation : forall {ty : Type} -> (t1 t2 : Term ty) -> Step t1 t2 -> ty == ty
 --preservation t1 t2 step = refl
 
--- A term is reducible when some evaluation step can be applied to it.
+
 data Red {ty : Type} (t : Term ty) : Set where
-  Reduces : {t' : Term ty} -> Step t t' -> Red t
+  Reduces : {s s' : State} {t' : Term ty} -> Step s t s' t' -> Red t
 
 -- A term is considered a normal form whenever it is not reducible.
 NF : ∀ {ty} -> Term ty → Set
@@ -178,21 +200,17 @@ toVal .(⌜ v ⌝) (is-value v) = v
 -- Sequences of small steps.
 --------------------------------------------------------------------------------
 
--- A sequence of steps that can be applied in succession.
-data Steps {ty : Type} : Term ty → Term ty → Set where
-  Nil : forall {t} -> Steps t t
-  Cons : forall {t1 t2 t3} -> Step t1 t2 -> Steps t2 t3 -> Steps t1 t3
+-- A sequence of steps that can be applied in succession
+data Steps {ty : Type} : State -> Term ty -> State -> Term ty -> Set where
+  Nil : forall {s t} -> Steps s t s t
+  Cons : forall {s1 s2 s3 t1 t2 t3} -> Step s1 t1 s2 t2 -> Steps s2 t2 s3 t3 -> Steps s1 t1 s3 t3
 
--- Single-step sequence.
-[_] : ∀ {ty} {t₁ t₂ : Term ty} -> Step t₁ t₂ -> Steps t₁ t₂
+-- Single-step sequence
+[_] : ∀ {ty} {s1 s2} {t1 t2 : Term ty} -> Step s1 t1 s2 t2 -> Steps s1 t1 s2 t2
 [_] x = Cons x Nil
-
--- zero steps using equality
-trivialSteps : ∀ {ty} {t1 t2 : Term ty} -> t1 == t2 -> Steps t1 t2
-trivialSteps refl = Nil
   
 -- Concatenation.
-_++_ : ∀ {ty} {t₁ t₂ t₃ : Term ty} → Steps t₁ t₂ → Steps t₂ t₃ → Steps t₁ t₃
+_++_ : ∀ {ty} {s1 s2 s3} {t1 t2 t3 : Term ty} → Steps s1 t1 s2 t2 → Steps s2 t2 s3 t3 → Steps s1 t1 s3 t3
 Nil ++ stps' = stps'
 Cons x stps ++ stps' = Cons x (stps ++ stps')
 
