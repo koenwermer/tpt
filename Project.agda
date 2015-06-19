@@ -45,15 +45,18 @@ data Bool : Set where
   False : Bool
 
 --Equality on nats:
-_`eq`_ : Nat -> Nat -> Bool
-Zero `eq` Zero = True
-Zero `eq` Succ _ = False
-Succ _ `eq` Zero = False
-Succ n `eq` Succ m = n `eq` m
+_`eq`_ : (n : Nat) -> (m : Nat) -> Either (n == m) (Not (n == m))
+Zero `eq` Zero = Left refl
+Zero `eq` Succ _ = Right (λ ())
+Succ _ `eq` Zero = Right (λ ())
+Succ n `eq` Succ m with n `eq` m
+Succ n `eq` Succ m | Left y = Left (cong Succ y)
+Succ n `eq` Succ m | Right y = {!!}
 
-If_Then_Else_ : {T : Set} -> Bool -> T -> T -> T
-If True Then x Else y = x
-If False Then x Else y = y
+-- Specialised if then else for using (in)equality proofs
+If_Then_Else_ : {S T : Set} {n m : S} -> Either (n == m) (Not (n == m)) -> T -> T -> T
+If (Left Refl) Then x Else y = x
+If (Right f) Then x Else y = y
 
 -------------------------------------------------------------------------------
 ----------------------               Syntax              ----------------------
@@ -98,7 +101,16 @@ data Term : Type -> Set where
 Pointer = Nat
 TypeEnv = Pointer -> Type
 
-State = (f : TypeEnv) -> (p : Pointer) -> (Term (f p))
+-- The environment returns the actual expressions, and is given a type environment that matches the expressions
+-- The state consists of a matching environment and type environment
+data State : TypeEnv -> Set where
+  state : (f : TypeEnv) -> ((p : Pointer) -> (Term (f p))) -> State f
+
+-- Some usefull functions on state:
+
+-- Redirects a pointer to another cell
+redirect : {typeOf : TypeEnv} -> (n : Pointer) -> (m : Pointer) -> typeOf n == typeOf m -> State typeOf -> State typeOf
+redirect n m refl (state typeOf env) = state typeOf (λ p → If p `eq` n Then env m Else env p)
 
 -- The set of atomic values within the language.
 data Value : Type -> Set where
@@ -143,24 +155,24 @@ viszero (vnat (Succ x)) = vfalse
 ----------------------             Small-step            ----------------------
 -------------------------------------------------------------------------------
 
-data Step  : {ty : Type} ->  State -> Term ty → State -> Term ty → Set where
+data Step  : {ty : Type} {f : TypeEnv} -> State f -> Term ty → State f -> Term ty → Set where
   -- Pure thingies leave the state unchanged, but may contain non-pure expressions and propagate the changes made by those
-  E-If-True : forall {s : State} {ty} {t1 t2 : Term ty} -> Step s (if true then t1 else t2) s t1
-  E-If-False : forall {s : State} {ty} {t1 t2 : Term ty} -> Step s (if false then t1 else t2) s t2
-  E-If-If : forall {s s' : State} {ty} {t1 t1' : Term BOOL} {t2 t3 : Term ty} -> Step s t1 s' t1' -> 
+  E-If-True : forall {f : TypeEnv} {s : State f} {ty} {t1 t2 : Term ty} -> Step s (if true then t1 else t2) s t1
+  E-If-False : forall {f : TypeEnv} {s : State f} {ty} {t1 t2 : Term ty} -> Step s (if false then t1 else t2) s t2
+  E-If-If : forall {f : TypeEnv} {s s' : State f} {ty} {t1 t1' : Term BOOL} {t2 t3 : Term ty} -> Step s t1 s' t1' -> 
     Step s (if t1 then t2 else t3) s' (if t1' then t2 else t3)
-  E-Succ       : {s s' : State} {t t' : Term NAT} -> Step {NAT} s t s' t' -> Step {NAT} s (succ t) s' (succ t')
-  E-IsZeroZero : {s : State} -> Step s (iszero zero) s true
-  E-IsZeroSucc : {s : State} {v : Value NAT} -> Step s (iszero (succ ⌜ v ⌝)) s false
-  E-IsZero     : {s s' : State} {t t' : Term NAT} -> Step s t s' t' -> Step s (iszero t) s' (iszero t')
+  E-Succ       : forall {f : TypeEnv} {s s' : State f} {t t' : Term NAT} -> Step {NAT} s t s' t' -> Step {NAT} s (succ t) s' (succ t')
+  E-IsZeroZero : forall {f : TypeEnv} {s : State f} -> Step s (iszero zero) s true
+  E-IsZeroSucc : forall {f : TypeEnv} {s : State f} {v : Value NAT} -> Step s (iszero (succ ⌜ v ⌝)) s false
+  E-IsZero     : forall {f : TypeEnv} {s s' : State f} {t t' : Term NAT} -> Step s t s' t' -> Step s (iszero t) s' (iszero t')
   -- Pointer thingies may use or change the state
-  -- Ref stores an expression in the state
-  E-=> : forall {s : State} {ty : Type} {n : Nat} {t : Term (POINTER ty)} -> Step s (var n => t) (λ tyEnv p -> {!If p `eq` n Then ! t Else s tyEnv p!}) <>
+  -- We can redirect pointers to other cells iff the the types match
+  E-=> : forall {typeOf : TypeEnv} {s : State typeOf} {ty : Type} {n m : Nat} -> (r : typeOf n == typeOf m) -> Step s (var n => var m) (redirect n m r s) <>
 
 
 
 
-
+{-
 
 valuesDoNotStep : forall {ty} {s1 s2} -> (v : Value ty) (t : Term ty) -> Step s1 ⌜ v ⌝  s2 t -> Empty
 valuesDoNotStep vtrue t ()
@@ -173,12 +185,8 @@ valuesDoNotStep (vnat x) t step = lemma x t step
 valuesDoNotStep (vvar n) t step = {!!}
 valuesDoNotStep vnothing t ()
 
-
-
-
-
---preservation : forall {ty : Type} -> (t1 t2 : Term ty) -> Step t1 t2 -> ty == ty
---preservation t1 t2 step = refl
+preservation : forall {ty : Type} -> (t1 t2 : Term ty) -> Step t1 t2 -> ty == ty
+preservation t1 t2 step = refl
 
 
 data Red {ty : Type} (t : Term ty) : Set where
@@ -215,3 +223,5 @@ Nil ++ stps' = stps'
 Cons x stps ++ stps' = Cons x (stps ++ stps')
 
 infixr 5 _++_
+
+-}
