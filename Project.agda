@@ -116,6 +116,15 @@ redirect n m r (state typeOf env) = state typeOf env'
   env' p | Left t | y  = {!env m!}
   env' p | Right _ = env p
 
+-- Stores an expression in a cell
+store : {ty : Type} {typeOf : TypeEnv} -> (n : Pointer) -> (t : Term ty) -> typeOf n == ty -> State typeOf -> State typeOf
+store n t refl (state typeOf env) = state typeOf env'
+  where
+  env' : (p : Pointer) -> (Term (typeOf p))
+  env' p with p `eq` n
+  env' .n | Left refl = t
+  env' p | Right _ = env p
+
 -- The set of atomic values within the language.
 data Value : Type -> Set where
   vtrue : Value BOOL 
@@ -176,7 +185,14 @@ data Step  : {ty : Type} {f : TypeEnv} -> State f -> Term ty → State f -> Term
   E-=>-Fst : forall {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t1 t1' t2 : Term (POINTER ty)} -> Step s t1 s' t1' -> Step s (t1 => t2) s' (t1' => t2)
   -- If the first argument is a pointer, we evaluate the second argument
   E-=>-Snd : forall {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {n : Nat} {t2 t2' : Term (POINTER ty)} -> Step s t2 s' t2' -> Step s (var n => t2) s' (var n => t2')
-  
+  -- We can store any expression in a cell, as long as the types match
+  E-:= : forall {typeOf : TypeEnv} {s : State typeOf} {ty : Type} {n : Nat} {t : Term ty} -> (r : typeOf n == ty) -> Step s (_:=_ {ty} (var n) t) (store n t r s) <>
+  -- We must first evaluate the first argument of := to a pointer
+  E-:=-Fst : forall {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t1 t1' : Term (POINTER ty)} {t2 : Term ty} -> Step s t1 s' t1' -> Step s (t1 := t2) s' (t1' := t2)
+  -- We can eliminate sequencing only if the first argument if completely evaluated
+  E-% : forall {typeOf : TypeEnv} {s : State typeOf} {t : Term <>} -> Step s (<> % t) s t
+  -- Of course, sequencing evaluates the first argument first
+  È-%-Fst : forall {typeOf : TypeEnv} {s s' : State typeOf} {t1 t1' t2 : Term <>} -> Step s t1 s' t1' -> Step s (t1 % t2) s' (t1' % t2)
 
 
 
