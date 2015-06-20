@@ -202,57 +202,53 @@ data Step  : {ty : Type} {f : TypeEnv} -> State f -> Term ty → State f -> Term
   -- We must first evaluate the pointer expression to normal form before we can dereference it
   E-!-Fst : forall {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t t' : Term (POINTER ty)} -> Step s t s' t' -> Step s (! t) s' (! t')
 
-
-{-
-
-valuesDoNotStep : forall {ty} {s1 s2} -> (v : Value ty) (t : Term ty) -> Step s1 ⌜ v ⌝  s2 t -> Empty
+valuesDoNotStep : forall {ty : Type} {f : TypeEnv} {s1 s2 : State f} -> (v : Value ty) (t : Term ty) -> Step s1 ⌜ v ⌝  s2 t -> Empty
 valuesDoNotStep vtrue t ()
 valuesDoNotStep vfalse t ()
 valuesDoNotStep (vnat x) t step = lemma x t step
   where
-  lemma : {s s' : State} -> (n : Nat) -> (t : Term NAT) -> Step s (natTerm n) s' t -> Empty
+  lemma : forall {typeOf : TypeEnv} {s s' : State typeOf} -> (n : Nat) -> (t : Term NAT) -> Step s (natTerm n) s' t -> Empty
   lemma Zero t ()
-  lemma (Succ n) ._ (E-Succ {_} {_} {._} {t} step) = lemma n (t) step
-valuesDoNotStep (vvar n) t step = {!!}
+  lemma {f} {s} {s'} (Succ n) .(succ t') (E-Succ {.f} {.s} {.s'} {.( ⌜ vnat n ⌝)} {t'} step) = lemma n t' step
+valuesDoNotStep (vvar n) t ()
 valuesDoNotStep vnothing t ()
 
-preservation : forall {ty : Type} -> (t1 t2 : Term ty) -> Step t1 t2 -> ty == ty
-preservation t1 t2 step = refl
+preservation : forall {ty : Type} {f : TypeEnv} {s s' : State f} -> (t t' : Term ty) -> Step s t s' t' -> ty == ty
+preservation t t' step = refl
 
-
+-- Reducible terms
 data Red {ty : Type} (t : Term ty) : Set where
-  Reduces : {s s' : State} {t' : Term ty} -> Step s t s' t' -> Red t
+  Reduces : forall {f : TypeEnv} {s s' : State f} {t' : Term ty} -> Step s t s' t' -> Red t
 
--- A term is considered a normal form whenever it is not reducible.
+-- Normal forms, i.e. irreducible terms
 NF : ∀ {ty} -> Term ty → Set
-NF t = Red t -> Empty
+NF t = Not (Red t)
 
 -- Evidence type that shows a certain term represents a value.
-data Is-value {ty : Type} : Term ty → Set where
-  is-value : ∀ v → Is-value ⌜ v ⌝
+data Is-value {ty : Type} : Term ty -> Set where
+  is-value : forall v -> Is-value ⌜ v ⌝
 
 toVal : forall {ty} -> (t : Term ty) -> Is-value t -> Value ty
 toVal .(⌜ v ⌝) (is-value v) = v
 
 
 --------------------------------------------------------------------------------
--- Sequences of small steps.
+-------------------------  Sequences of small steps  ---------------------------
 --------------------------------------------------------------------------------
 
 -- A sequence of steps that can be applied in succession
-data Steps {ty : Type} : State -> Term ty -> State -> Term ty -> Set where
+data Steps {ty : Type} {f : TypeEnv} : State f -> Term ty -> State f -> Term ty -> Set where
   Nil : forall {s t} -> Steps s t s t
   Cons : forall {s1 s2 s3 t1 t2 t3} -> Step s1 t1 s2 t2 -> Steps s2 t2 s3 t3 -> Steps s1 t1 s3 t3
 
 -- Single-step sequence
-[_] : ∀ {ty} {s1 s2} {t1 t2 : Term ty} -> Step s1 t1 s2 t2 -> Steps s1 t1 s2 t2
+[_] : forall {ty : Type} {f : TypeEnv} {s1 s2 : State f} {t1 t2 : Term ty} -> Step s1 t1 s2 t2 -> Steps s1 t1 s2 t2
 [_] x = Cons x Nil
   
 -- Concatenation.
-_++_ : ∀ {ty} {s1 s2 s3} {t1 t2 t3 : Term ty} → Steps s1 t1 s2 t2 → Steps s2 t2 s3 t3 → Steps s1 t1 s3 t3
+_++_ : forall {ty : Type} {f : TypeEnv} {s1 s2 s3 : State f} {t1 t2 t3 : Term ty} -> Steps s1 t1 s2 t2 -> Steps s2 t2 s3 t3 -> Steps s1 t1 s3 t3
 Nil ++ stps' = stps'
 Cons x stps ++ stps' = Cons x (stps ++ stps')
 
 infixr 5 _++_
 
--}
