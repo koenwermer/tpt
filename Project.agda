@@ -2,7 +2,7 @@
 module Project where
 
 -------------------------------------------------------------------------------
-----------------------  Prelude - copied from exercise 2a  --------------------
+-----------------  Prelude - partially copied from exercise 2a  ---------------
 -------------------------------------------------------------------------------
 
 -- Equality.
@@ -14,6 +14,9 @@ cong f refl = refl
 
 trans : {a : Set} {x y z : a} -> x == y -> y == z -> x == z
 trans refl refl = refl
+
+reflexive : {a : Set} {x y : a} -> x == y -> y == x
+reflexive refl = refl
 
 -- Contradiction type.
 data Empty : Set where
@@ -53,8 +56,12 @@ Zero `eq` Zero = Left refl
 Zero `eq` Succ _ = Right (λ ())
 Succ _ `eq` Zero = Right (λ ())
 Succ n `eq` Succ m with n `eq` m
-Succ n `eq` Succ m | Left y = Left (cong Succ y)
-Succ n `eq` Succ m | Right y = {!!}
+Succ n `eq` Succ m | Left r = Left (cong Succ r)
+Succ n `eq` Succ m | Right f = Right (λ r -> f (cong unSucc r))
+  where
+  unSucc : Nat -> Nat
+  unSucc Zero = Zero
+  unSucc (Succ n) = n
 
 -------------------------------------------------------------------------------
 ----------------------               Syntax              ----------------------
@@ -106,6 +113,10 @@ data State : TypeEnv -> Set where
 
 -- Some usefull functions on state:
 
+-- Retrieves the values of a given pointer from the state, and rewrites the type using equational reasoning
+getEq : {typeOf : TypeEnv} {ty : Type} -> State typeOf -> (n : Pointer) -> typeOf n == ty -> Term ty
+getEq {typeOf} (state .typeOf env) n refl = env n
+
 -- Redirects a pointer to another cell
 redirect : {typeOf : TypeEnv} -> (n : Pointer) -> (m : Pointer) -> typeOf n == typeOf m -> State typeOf -> State typeOf
 redirect n m r (state typeOf env) = state typeOf env'
@@ -113,7 +124,7 @@ redirect n m r (state typeOf env) = state typeOf env'
   env' : (p : Pointer) -> (Term (typeOf p))
   env' p with p `eq` n
   env' p | Left t with trans (cong typeOf t) r
-  env' p | Left t | y  = {!env m!}
+  env' .n | Left refl | y = getEq (state typeOf env) m (reflexive y)
   env' p | Right _ = env p
 
 -- Stores an expression in a cell
@@ -127,7 +138,7 @@ store n t refl (state typeOf env) = state typeOf env'
 
 -- Gets an expression from a cell
 get : {typeOf : TypeEnv} -> State typeOf -> (n : Pointer) -> Term (typeOf n)
-get s n = {!!}
+get s n = getEq s n refl
 
 -- The set of atomic values within the language.
 data Value : Type -> Set where
@@ -149,24 +160,6 @@ natTerm (Succ k) = succ (natTerm k)
 ⌜ vvar n ⌝ = var n
 ⌜ vnothing ⌝ = <>
 
--------------------------------------------------------------------------------
-----------------------            Denotational           ----------------------
--------------------------------------------------------------------------------
-
-cond : forall {ty} -> Value BOOL → Value ty → Value ty → Value ty
-cond vtrue v2 v3 = v2
-cond vfalse v2 v3 = v3
-
-vsucc : Value NAT -> Value NAT
-vsucc (vnat x) = vnat (Succ x)
-
-viszero : Value NAT -> Value BOOL
-viszero (vnat Zero) = vtrue
-viszero (vnat (Succ x)) = vfalse
-
--- Evaluation function.
-⟦_⟧ : forall {ty} -> Term ty  → Value ty
-⟦ t ⟧ = {!!}
 
 -------------------------------------------------------------------------------
 ----------------------             Small-step            ----------------------
