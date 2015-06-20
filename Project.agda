@@ -12,6 +12,9 @@ data _==_ {A : Set} (x : A) : A → Set where
 cong : {a b : Set} {x y : a} (f : a -> b) -> x == y -> f x == f y
 cong f refl = refl
 
+trans : {a : Set} {x y z : a} -> x == y -> y == z -> x == z
+trans refl refl = refl
+
 -- Contradiction type.
 data Empty : Set where
 
@@ -52,11 +55,6 @@ Succ _ `eq` Zero = Right (λ ())
 Succ n `eq` Succ m with n `eq` m
 Succ n `eq` Succ m | Left y = Left (cong Succ y)
 Succ n `eq` Succ m | Right y = {!!}
-
--- Specialised if then else for using (in)equality proofs
-If_Then_Else_ : {S T : Set} {n m : S} -> Either (n == m) (Not (n == m)) -> T -> T -> T
-If (Left Refl) Then x Else y = x
-If (Right f) Then x Else y = y
 
 -------------------------------------------------------------------------------
 ----------------------               Syntax              ----------------------
@@ -110,7 +108,13 @@ data State : TypeEnv -> Set where
 
 -- Redirects a pointer to another cell
 redirect : {typeOf : TypeEnv} -> (n : Pointer) -> (m : Pointer) -> typeOf n == typeOf m -> State typeOf -> State typeOf
-redirect n m refl (state typeOf env) = state typeOf (λ p → If p `eq` n Then env m Else env p)
+redirect n m r (state typeOf env) = state typeOf env'
+  where
+  env' : (p : Pointer) -> (Term (typeOf p))
+  env' p with p `eq` n
+  env' p | Left t with trans (cong typeOf t) r
+  env' p | Left t | y  = {!env m!}
+  env' p | Right _ = env p
 
 -- The set of atomic values within the language.
 data Value : Type -> Set where
@@ -166,8 +170,13 @@ data Step  : {ty : Type} {f : TypeEnv} -> State f -> Term ty → State f -> Term
   E-IsZeroSucc : forall {f : TypeEnv} {s : State f} {v : Value NAT} -> Step s (iszero (succ ⌜ v ⌝)) s false
   E-IsZero     : forall {f : TypeEnv} {s s' : State f} {t t' : Term NAT} -> Step s t s' t' -> Step s (iszero t) s' (iszero t')
   -- Pointer thingies may use or change the state
-  -- We can redirect pointers to other cells iff the the types match
-  E-=> : forall {typeOf : TypeEnv} {s : State typeOf} {ty : Type} {n m : Nat} -> (r : typeOf n == typeOf m) -> Step s (var n => var m) (redirect n m r s) <>
+  -- We can redirect pointers to other cells iff the the types match. Both arguments of => must be completely evaluated
+  E-=> : forall {typeOf : TypeEnv} {s : State typeOf} {ty : Type} {n m : Nat} -> (r : typeOf n == ty) (r' : ty == typeOf m) -> Step s (_=>_ {ty} (var n) (var m)) (redirect n m (trans r r') s) <>
+  -- We first evaluate the first argument of => to a pointer
+  E-=>-Fst : forall {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t1 t1' t2 : Term (POINTER ty)} -> Step s t1 s' t1' -> Step s (t1 => t2) s' (t1' => t2)
+  -- If the first argument is a pointer, we evaluate the second argument
+  E-=>-Snd : forall {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {n : Nat} {t2 t2' : Term (POINTER ty)} -> Step s t2 s' t2' -> Step s (var n => t2) s' (var n => t2')
+  
 
 
 
