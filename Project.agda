@@ -125,6 +125,10 @@ store n t refl (state typeOf env) = state typeOf env'
   env' .n | Left refl = t
   env' p | Right _ = env p
 
+-- Gets an expression from a cell
+get : {typeOf : TypeEnv} -> State typeOf -> (n : Pointer) -> Term (typeOf n)
+get s n = {!!}
+
 -- The set of atomic values within the language.
 data Value : Type -> Set where
   vtrue : Value BOOL 
@@ -193,8 +197,10 @@ data Step  : {ty : Type} {f : TypeEnv} -> State f -> Term ty → State f -> Term
   E-% : forall {typeOf : TypeEnv} {s : State typeOf} {t : Term <>} -> Step s (<> % t) s t
   -- Of course, sequencing evaluates the first argument first
   È-%-Fst : forall {typeOf : TypeEnv} {s s' : State typeOf} {t1 t1' t2 : Term <>} -> Step s t1 s' t1' -> Step s (t1 % t2) s' (t1' % t2)
-
-
+  -- Dereferencing just gets the stored expression from the state
+  E-! : forall {typeOf : TypeEnv} {s : State typeOf} {n : Nat} -> Step s (! (var n)) s (get s n)
+  -- We must first evaluate the pointer expression to normal form before we can dereference it
+  E-!-Fst : forall {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t t' : Term (POINTER ty)} -> Step s t s' t' -> Step s (! t) s' (! t')
 
 
 {-
