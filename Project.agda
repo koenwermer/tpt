@@ -101,6 +101,7 @@ data Term : Type -> Set where
   !_            : {ty : Type} -> Term (POINTER ty) -> Term ty
   -- Nothing
   <>            : Term <>
+  
 
 -- We need an environment to keep track of the types of stored variables
 Pointer = Nat
@@ -111,8 +112,14 @@ TypeEnv = Pointer -> Type
 data State : TypeEnv -> Set where
   state : (f : TypeEnv) -> ((p : Pointer) -> (Term (f p))) -> State f
 
--- Some usefull functions on state:
+-- The types of values that will be stored can of course not be known beforehand,
+-- therefore we proof that we have an initial state that is valid for every possible typing
+-- Of course we can't get values from empty cells, so we just recurse
+-- (In practice, getting an error would be prefered over your program getting stuck in a loop, but for this project it doesn't matter)
+initState : forall {f} -> State f
+initState {f} = state f (λ p -> ! (var p))
 
+-- Some usefull functions on state:
 -- Retrieves the values of a given pointer from the state, and rewrites the type using equational reasoning
 getEq : {typeOf : TypeEnv} {ty : Type} -> State typeOf -> (n : Pointer) -> typeOf n == ty -> Term ty
 getEq {typeOf} (state .typeOf env) n refl = env n
