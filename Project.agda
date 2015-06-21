@@ -15,8 +15,8 @@ cong f refl = refl
 trans : {a : Set} {x y z : a} -> x == y -> y == z -> x == z
 trans refl refl = refl
 
-reflexive : {a : Set} {x y : a} -> x == y -> y == x
-reflexive refl = refl
+symm : {a : Set} {x y : a} -> x == y -> y == x
+symm refl = refl
 
 -- Contradiction type.
 data Empty : Set where
@@ -124,7 +124,7 @@ redirect n m r (state typeOf env) = state typeOf env'
   env' : (p : Pointer) -> (Term (typeOf p))
   env' p with p `eq` n
   env' p | Left t with trans (cong typeOf t) r
-  env' .n | Left refl | y = getEq (state typeOf env) m (reflexive y)
+  env' .n | Left refl | y = getEq (state typeOf env) m (symm y)
   env' p | Right _ = env p
 
 -- Stores an expression in a cell
@@ -177,7 +177,7 @@ data Step  : {ty : Type} {f : TypeEnv} -> State f -> Term ty → State f -> Term
   E-IsZero     : forall {f : TypeEnv} {s s' : State f} {t t' : Term NAT} -> Step s t s' t' -> Step s (iszero t) s' (iszero t')
   -- Pointer thingies may use or change the state
   -- We can redirect pointers to other cells iff the the types match. Both arguments of => must be completely evaluated
-  E-=> : forall {typeOf : TypeEnv} {s : State typeOf} {ty : Type} {n m : Nat} -> (r : typeOf n == ty) (r' : ty == typeOf m) -> Step s (_=>_ {ty} (var n) (var m)) (redirect n m (trans r r') s) <>
+  E-=> : forall {typeOf : TypeEnv} {s : State typeOf} {ty : Type} {n m : Nat} -> (r : typeOf n == ty) (r' : typeOf m == ty) -> Step s (_=>_ {ty} (var n) (var m)) (redirect n m (trans r (symm r')) s) <>
   -- We first evaluate the first argument of => to a pointer
   E-=>-Fst : forall {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t1 t1' t2 : Term (POINTER ty)} -> Step s t1 s' t1' -> Step s (t1 => t2) s' (t1' => t2)
   -- If the first argument is a pointer, we evaluate the second argument
@@ -206,6 +206,59 @@ valuesDoNotStep (vnat x) t step = lemma x t step
 valuesDoNotStep (vvar n) t ()
 valuesDoNotStep vnothing t ()
 
+-- Proving the small step semantics are deterministic
+deterministic : forall {ty} {f : TypeEnv} {s s' s'' : State f} {t t' t'' : Term ty} -> Step s t s' t' -> Step s t s'' t'' → t' == t''
+deterministic E-If-True E-If-True = refl
+deterministic E-If-True (E-If-If ())
+deterministic E-If-False E-If-False = refl
+deterministic E-If-False (E-If-If ())
+deterministic (E-If-If ()) E-If-True
+deterministic (E-If-If ()) E-If-False
+deterministic (E-If-If step1) (E-If-If step2) = cong (λ x -> if x then _ else _) (deterministic step1 step2)
+deterministic (E-Succ steps1) (E-Succ steps2) = cong succ (deterministic steps1 steps2)
+deterministic E-IsZeroZero E-IsZeroZero = refl
+deterministic E-IsZeroZero (E-IsZero ())
+deterministic (E-IsZeroSucc {_} {_} {v}) step2 = lemma v _ step2
+  where
+  lemma : (v : Value NAT) (t : Term BOOL) -> Step _ (iszero (succ ⌜ v ⌝)) _ t -> false == t
+  lemma (vnat x) true ()
+  lemma (vnat x) false step = refl
+  lemma (vnat x) (if t then t₁ else t₂) ()
+  lemma (vnat x) (iszero ._) (E-IsZero (E-Succ step)) = contradiction (valuesDoNotStep (vnat x) _ step)
+  lemma (vnat x) (! p) ()
+deterministic (E-IsZero ()) E-IsZeroZero
+deterministic step1 (E-IsZeroSucc {_} {_} {v}) = lemma v _ step1
+  where
+  lemma : (v : Value NAT) (t : Term BOOL) -> Step _ (iszero (succ ⌜ v ⌝)) _ t -> t == false
+  lemma (vnat x) true ()
+  lemma (vnat x) false step = refl
+  lemma (vnat x) (if t then t₁ else t₂) ()
+  lemma (vnat x) (iszero ._) (E-IsZero (E-Succ step)) = contradiction (valuesDoNotStep (vnat x) _ step)
+  lemma (vnat x) (! p) ()
+deterministic (E-IsZero step1) (E-IsZero step2) = cong iszero (deterministic step1 step2)
+deterministic (E-=> r r') (E-=> r0 r1) = refl
+deterministic (E-=> r r') (E-=>-Fst ())
+deterministic (E-=> r r') (E-=>-Snd ())
+deterministic (E-=>-Fst ()) (E-=> r r')
+deterministic (E-=>-Fst step1) (E-=>-Fst step2) = cong _ (deterministic step1 step2)
+deterministic (E-=>-Fst ()) (E-=>-Snd step2)
+deterministic (E-=>-Snd ()) (E-=> r r')
+deterministic (E-=>-Snd step1) (E-=>-Fst ())
+deterministic (E-=>-Snd step1) (E-=>-Snd step2) = cong _ (deterministic step1 step2)
+deterministic (E-:= r) (E-:= r') = refl
+deterministic (E-:= r) (E-:=-Fst ())
+deterministic (E-:=-Fst ()) (E-:= r)
+deterministic (E-:=-Fst step1) (E-:=-Fst step2) = cong _ (deterministic step1 step2)
+deterministic E-% E-% = refl
+deterministic E-% (È-%-Fst ())
+deterministic (È-%-Fst ()) E-%
+deterministic (È-%-Fst step1) (È-%-Fst step2) = cong _ (deterministic step1 step2)
+deterministic E-! E-! = refl
+deterministic E-! (E-!-Fst ())
+deterministic (E-!-Fst ()) E-!
+deterministic (E-!-Fst step1) (E-!-Fst step2) = cong _ (deterministic step1 step2)
+
+-- Types are preserved during evaluation
 preservation : forall {ty : Type} {f : TypeEnv} {s s' : State f} -> (t t' : Term ty) -> Step s t s' t' -> ty == ty
 preservation t t' step = refl
 
