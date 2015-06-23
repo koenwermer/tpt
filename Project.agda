@@ -1,6 +1,8 @@
 
 module Project where
 
+open import Agda.Primitive
+
 -------------------------------------------------------------------------------
 -----------------  Prelude - partially copied from exercise 2a  ---------------
 -------------------------------------------------------------------------------
@@ -12,6 +14,9 @@ data _==_ {A : Set} (x : A) : A → Set where
 cong : {a b : Set} {x y : a} (f : a -> b) -> x == y -> f x == f y
 cong f refl = refl
 
+cong2 : {a b c : Set} {x y : a} {p q : b} (f : a -> b -> c) -> x == y -> p == q -> f x p  == f y q
+cong2 f refl refl = refl
+
 trans : {a : Set} {x y z : a} -> x == y -> y == z -> x == z
 trans refl refl = refl
 
@@ -21,9 +26,12 @@ symm refl = refl
 -- Contradiction type.
 data Empty : Set where
 
--- Reducto ab absurdum.
+-- Ex falsum quodlibet.
 contradiction : {A : Set} → Empty → A
 contradiction ()
+
+proof-irrelevance : ∀{t} {x y : t} {p q : x == y} -> p == q
+proof-irrelevance {p = refl} {q = refl} = refl
 
 -- Negation
 Not : Set → Set
@@ -37,8 +45,8 @@ data Either (a b : Set) : Set where
   Left : a -> Either a b
   Right : b -> Either a b
 
-data Tuple (a b : Set) : Set where
-  _,_ : a -> b -> Tuple a b
+data Tuple {n : Level}(a b : Set n) : Set n where
+  _,_ : a -> b -> Tuple {n} a b
 
 fst : {a b : Set} -> Tuple a b -> a
 fst (x , y) = x
@@ -67,25 +75,20 @@ Succ n `eq` Succ m | Right f = Right (λ r -> f (cong unSucc r))
 ----------------------               Syntax              ----------------------
 -------------------------------------------------------------------------------
 
--- Natural numbers suffice as identifiers for variables
-Variable = Nat
-
 data Type : Set where
   NAT     : Type
   BOOL    : Type
   <>      : Type
   POINTER : Type -> Type
 
--- Terms of the language
 data Term : Type -> Set where
-  -- Basic stuff
   true          : Term BOOL 
   false         : Term BOOL
   if_then_else_ : {ty : Type} -> (c : Term BOOL) -> (t e : Term ty) → Term ty
   zero          : Term NAT
   succ          : (n : Term NAT) -> Term NAT
   iszero        : (n : Term NAT) -> Term BOOL
-  -- We just use natural numbers as variables
+  -- The natural number identifies the variable
   var           : {ty : Type} -> Nat -> Term (POINTER ty)
 
   -- Create a new cell with an initial value REPLACED BY VAR
@@ -99,7 +102,7 @@ data Term : Type -> Set where
   _%_           : Term <> -> Term <> -> Term <> -- ; not allowed as operator :'(
   -- Dereferencing
   !_            : {ty : Type} -> Term (POINTER ty) -> Term ty
-  -- Nothing
+  -- No-op
   <>            : Term <>
   
 
@@ -119,7 +122,7 @@ data State : TypeEnv -> Set where
 initState : forall {f} -> State f
 initState {f} = state f (λ p -> ! (var p))
 
--- Some usefull functions on state:
+-- Some useful functions on state:
 -- Retrieves the values of a given pointer from the state, and rewrites the type using equational reasoning
 getEq : {typeOf : TypeEnv} {ty : Type} -> State typeOf -> (n : Pointer) -> typeOf n == ty -> Term ty
 getEq {typeOf} (state .typeOf env) n refl = env n
@@ -225,14 +228,15 @@ deterministic (E-If-If step1) (E-If-If step2) = cong (λ x -> if x then _ else _
 deterministic (E-Succ steps1) (E-Succ steps2) = cong succ (deterministic steps1 steps2)
 deterministic E-IsZeroZero E-IsZeroZero = refl
 deterministic E-IsZeroZero (E-IsZero ())
-deterministic (E-IsZeroSucc {_} {_} {v}) step2 = lemma v _ step2
+deterministic (E-IsZeroSucc {s = s} {v = v} ) step2 = lemma v _ step2
   where
-  lemma : (v : Value NAT) (t : Term BOOL) -> Step _ (iszero (succ ⌜ v ⌝)) _ t -> false == t
+  lemma : (v : Value NAT) (t : Term BOOL) -> Step s (iszero (succ ⌜ v ⌝)) _ t -> false == t
   lemma (vnat x) true ()
   lemma (vnat x) false step = refl
   lemma (vnat x) (if t then t₁ else t₂) ()
   lemma (vnat x) (iszero ._) (E-IsZero (E-Succ step)) = contradiction (valuesDoNotStep (vnat x) _ step)
   lemma (vnat x) (! p) ()
+
 deterministic (E-IsZero ()) E-IsZeroZero
 deterministic step1 (E-IsZeroSucc {_} {_} {v}) = lemma v _ step1
   where
@@ -264,6 +268,57 @@ deterministic E-! E-! = refl
 deterministic E-! (E-!-Fst ())
 deterministic (E-!-Fst ()) E-!
 deterministic (E-!-Fst step1) (E-!-Fst step2) = cong _ (deterministic step1 step2)
+
+data Inspect {A : Set} (x : A) : Set where
+  _with-==_ : (y : A) (eq : x == y) → Inspect x
+
+inspect : {A : Set} (x : A) → Inspect x
+inspect x = x with-== refl
+
+deterministic-heap : forall {ty} {f : TypeEnv} {s s' s'' : State f} {t t' t'' : Term ty} -> Step s t s' t' -> Step s t s'' t'' → s' == s''
+deterministic-heap E-If-True E-If-True = refl
+deterministic-heap E-If-True (E-If-If ())
+deterministic-heap E-If-False E-If-False = refl
+deterministic-heap E-If-False (E-If-If ())
+deterministic-heap (E-If-If ()) E-If-True
+deterministic-heap (E-If-If ()) E-If-False
+deterministic-heap (E-If-If s1) (E-If-If s2) = deterministic-heap s1 s2
+deterministic-heap (E-Succ s1) (E-Succ s2) = deterministic-heap s1 s2
+deterministic-heap E-IsZeroZero E-IsZeroZero = refl
+deterministic-heap E-IsZeroZero (E-IsZero ())
+deterministic-heap (E-IsZeroSucc {v = v}) s2 = lemma _ s2
+  where
+  lemma : (t : Term BOOL) -> Step _ (iszero (succ ⌜ v ⌝)) _ t -> _ == _
+  lemma true ()
+  lemma false step = {!!}
+  lemma (if t then t₁ else t₂) ()
+  lemma (iszero ._) (E-IsZero (E-Succ step)) = contradiction (valuesDoNotStep (v) _ step)
+  lemma (! p) ()
+
+deterministic-heap (E-IsZero ()) E-IsZeroZero
+deterministic-heap (E-IsZero {s = s} {s' = s'} (E-Succ {t' = t'} s1)) (E-IsZeroSucc {v = v}) = {!!}
+deterministic-heap (E-IsZero s1) (E-IsZero s2) = deterministic-heap s1 s2
+deterministic-heap (E-=> refl r') (E-=> refl r'') = cong (\x -> redirect _ _ (trans refl (symm x)) _) proof-irrelevance
+deterministic-heap (E-=> r r') (E-=>-Fst ())
+deterministic-heap (E-=> r r') (E-=>-Snd ())
+deterministic-heap (E-=>-Fst ()) (E-=> r r')
+deterministic-heap (E-=>-Fst s1) (E-=>-Fst s2) = deterministic-heap s1 s2
+deterministic-heap (E-=>-Fst ()) (E-=>-Snd s2)
+deterministic-heap (E-=>-Snd ()) (E-=> r r')
+deterministic-heap (E-=>-Snd s1) (E-=>-Fst ())
+deterministic-heap (E-=>-Snd s1) (E-=>-Snd s2) = deterministic-heap s1 s2
+deterministic-heap (E-:= r) (E-:= r₁) = cong (\x -> store _ _ x _) proof-irrelevance
+deterministic-heap (E-:= r) (E-:=-Fst ())
+deterministic-heap (E-:=-Fst ()) (E-:= r)
+deterministic-heap (E-:=-Fst s1) (E-:=-Fst s2) = deterministic-heap s1 s2
+deterministic-heap E-% E-% = refl
+deterministic-heap E-% (È-%-Fst ())
+deterministic-heap (È-%-Fst ()) E-%
+deterministic-heap (È-%-Fst s1) (È-%-Fst s2) = deterministic-heap s1 s2
+deterministic-heap E-! E-! = refl
+deterministic-heap E-! (E-!-Fst ())
+deterministic-heap (E-!-Fst ()) E-!
+deterministic-heap (E-!-Fst s1) (E-!-Fst s2) = deterministic-heap s1 s2
 
 -- Types are preserved during evaluation
 preservation : forall {ty : Type} {f : TypeEnv} {s s' : State f} -> (t t' : Term ty) -> Step s t s' t' -> ty == ty
@@ -305,3 +360,12 @@ Cons x stps ++ stps' = Cons x (stps ++ stps')
 
 infixr 5 _++_
 
+uniqueness-of-normal-forms :
+  ∀ {ty tyEnv s s1 s2} {t t₁ t₂ : Term ty} →
+  Steps {ty} {tyEnv} s t s1 t₁ → Steps s t s2 t₂ → NF t₁ → NF t₂ → (t₁ , s1) == (t₂ , s2)
+uniqueness-of-normal-forms Nil Nil nf1 nf2 = refl
+uniqueness-of-normal-forms Nil (Cons x s3) nf1 nf2 = contradiction (nf1 (Reduces x))
+uniqueness-of-normal-forms (Cons x s4) Nil nf1 nf2 = contradiction (nf2 (Reduces x))
+uniqueness-of-normal-forms (Cons x s4) (Cons y s6) nf1 nf2 with deterministic x y
+uniqueness-of-normal-forms (Cons x s4) (Cons y s6) nf1 nf2 | refl with deterministic-heap x y
+uniqueness-of-normal-forms (Cons x s5) (Cons y s6) nf1 nf2 | refl | refl = uniqueness-of-normal-forms s5 s6 nf1 nf2
