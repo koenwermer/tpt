@@ -305,3 +305,20 @@ Cons x stps ++ stps' = Cons x (stps ++ stps')
 
 infixr 5 _++_
 
+
+--------------------------------------------------------------------------------
+-------------------------------  Hoare logic  ----------------------------------
+--------------------------------------------------------------------------------
+
+-- A data type for predicates that hold on given state
+data Valid : {f : TypeEnv} -> (State f -> Bool) -> State f -> Set where
+  P : {f : TypeEnv} -> (p : State f -> Bool) -> (s : State f) -> p s == True -> Valid p s
+
+-- A datatype for valid hoare triples
+-- A hoare triple {p}t{q} is valid if s satisfying p implies that s' satisfies q
+-- (where s' is the state resulting from completely evaluating the term t)
+data HoareTriple : {ty : Type} {f : TypeEnv} -> (State f -> Bool) -> Term ty -> (State f -> Bool) -> Set where
+  triple : {ty : Type} {f : TypeEnv} {s s' : State f} -> (p : State f -> Bool) -> (t : Term ty) -> (q : State f -> Bool) -> ({v : Value ty} -> Steps s t s' ⌜ v ⌝ -> Valid p s -> Valid q s') -> HoareTriple p t q
+
+PreStrengthening : {ty : Type} {f : TypeEnv} {t : Term ty} {p p' q : State f -> Bool} -> HoareTriple p t q -> ({s : State f} -> Valid p' s -> Valid p s) -> HoareTriple p' t q
+PreStrengthening {ty} {f} {t} {p} {p'} {q} (triple {.ty} {.f} .p .t .q y) g = triple p' t q (λ steps valid -> y steps (g valid))
