@@ -174,33 +174,33 @@ natTerm (Succ k) = succ (natTerm k)
 
 data Step  : {ty : Type} {f : TypeEnv} -> State f -> Term ty → State f -> Term ty → Set where
   -- Pure thingies leave the state unchanged, but may contain non-pure expressions and propagate the changes made by those
-  E-If-True : forall {f : TypeEnv} {s : State f} {ty} {t1 t2 : Term ty} -> Step s (if true then t1 else t2) s t1
-  E-If-False : forall {f : TypeEnv} {s : State f} {ty} {t1 t2 : Term ty} -> Step s (if false then t1 else t2) s t2
-  E-If-If : forall {f : TypeEnv} {s s' : State f} {ty} {t1 t1' : Term BOOL} {t2 t3 : Term ty} -> Step s t1 s' t1' -> 
+  E-If-True : {f : TypeEnv} {s : State f} {ty : Type} {t1 t2 : Term ty} -> Step s (if true then t1 else t2) s t1
+  E-If-False : {f : TypeEnv} {s : State f} {ty : Type} {t1 t2 : Term ty} -> Step s (if false then t1 else t2) s t2
+  E-If-If : {f : TypeEnv} {s s' : State f} {ty : Type} {t1 t1' : Term BOOL} {t2 t3 : Term ty} -> Step s t1 s' t1' -> 
     Step s (if t1 then t2 else t3) s' (if t1' then t2 else t3)
-  E-Succ       : forall {f : TypeEnv} {s s' : State f} {t t' : Term NAT} -> Step {NAT} s t s' t' -> Step {NAT} s (succ t) s' (succ t')
-  E-IsZeroZero : forall {f : TypeEnv} {s : State f} -> Step s (iszero zero) s true
-  E-IsZeroSucc : forall {f : TypeEnv} {s : State f} {v : Value NAT} -> Step s (iszero (succ ⌜ v ⌝)) s false
-  E-IsZero     : forall {f : TypeEnv} {s s' : State f} {t t' : Term NAT} -> Step s t s' t' -> Step s (iszero t) s' (iszero t')
+  E-Succ       : {f : TypeEnv} {s s' : State f} {t t' : Term NAT} -> Step {NAT} s t s' t' -> Step {NAT} s (succ t) s' (succ t')
+  E-IsZeroZero : {f : TypeEnv} {s : State f} -> Step s (iszero zero) s true
+  E-IsZeroSucc : {f : TypeEnv} {s : State f} {v : Value NAT} -> Step s (iszero (succ ⌜ v ⌝)) s false
+  E-IsZero     : {f : TypeEnv} {s s' : State f} {t t' : Term NAT} -> Step s t s' t' -> Step s (iszero t) s' (iszero t')
   -- Pointer thingies may use or change the state
   -- We can redirect pointers to other cells iff the the types match. Both arguments of => must be completely evaluated
-  E-=> : forall {typeOf : TypeEnv} {s : State typeOf} {ty : Type} {n m : Nat} -> (r : typeOf n == ty) (r' : typeOf m == ty) -> Step s (_=>_ {ty} (var n) (var m)) (redirect n m (trans r (symm r')) s) <>
+  E-=> : {typeOf : TypeEnv} {s : State typeOf} {ty : Type} {n m : Nat} -> (r : typeOf n == ty) (r' : typeOf m == ty) -> Step s (_=>_ {ty} (var n) (var m)) (redirect n m (trans r (symm r')) s) <>
   -- We first evaluate the first argument of => to a pointer
-  E-=>-Fst : forall {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t1 t1' t2 : Term (POINTER ty)} -> Step s t1 s' t1' -> Step s (t1 => t2) s' (t1' => t2)
+  E-=>-Fst : {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t1 t1' t2 : Term (POINTER ty)} -> Step s t1 s' t1' -> Step s (t1 => t2) s' (t1' => t2)
   -- If the first argument is a pointer, we evaluate the second argument
-  E-=>-Snd : forall {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {n : Nat} {t2 t2' : Term (POINTER ty)} -> Step s t2 s' t2' -> Step s (var n => t2) s' (var n => t2')
+  E-=>-Snd : {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {n : Nat} {t2 t2' : Term (POINTER ty)} -> Step s t2 s' t2' -> Step s (var n => t2) s' (var n => t2')
   -- We can store any expression in a cell, as long as the types match
-  E-:= : forall {typeOf : TypeEnv} {s : State typeOf} {ty : Type} {n : Nat} {t : Term ty} -> (r : typeOf n == ty) -> Step s (_:=_ {ty} (var n) t) (store n t r s) <>
+  E-:= : {typeOf : TypeEnv} {s : State typeOf} {ty : Type} {n : Nat} {t : Term ty} -> (r : typeOf n == ty) -> Step s (_:=_ {ty} (var n) t) (store n t r s) <>
   -- We must first evaluate the first argument of := to a pointer
-  E-:=-Fst : forall {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t1 t1' : Term (POINTER ty)} {t2 : Term ty} -> Step s t1 s' t1' -> Step s (t1 := t2) s' (t1' := t2)
+  E-:=-Fst : {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t1 t1' : Term (POINTER ty)} {t2 : Term ty} -> Step s t1 s' t1' -> Step s (t1 := t2) s' (t1' := t2)
   -- We can eliminate sequencing only if the first argument if completely evaluated
-  E-% : forall {typeOf : TypeEnv} {s : State typeOf} {t : Term <>} -> Step s (<> % t) s t
+  E-% : {typeOf : TypeEnv} {s : State typeOf} {t : Term <>} -> Step s (<> % t) s t
   -- Of course, sequencing evaluates the first argument first
-  È-%-Fst : forall {typeOf : TypeEnv} {s s' : State typeOf} {t1 t1' t2 : Term <>} -> Step s t1 s' t1' -> Step s (t1 % t2) s' (t1' % t2)
+  È-%-Fst : {typeOf : TypeEnv} {s s' : State typeOf} {t1 t1' t2 : Term <>} -> Step s t1 s' t1' -> Step s (t1 % t2) s' (t1' % t2)
   -- Dereferencing just gets the stored expression from the state
-  E-! : forall {typeOf : TypeEnv} {s : State typeOf} {n : Nat} -> Step s (! (var n)) s (get s n)
+  E-! : {typeOf : TypeEnv} {s : State typeOf} {n : Nat} -> Step s (! (var n)) s (get s n)
   -- We must first evaluate the pointer expression to normal form before we can dereference it
-  E-!-Fst : forall {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t t' : Term (POINTER ty)} -> Step s t s' t' -> Step s (! t) s' (! t')
+  E-!-Fst : {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t t' : Term (POINTER ty)} -> Step s t s' t' -> Step s (! t) s' (! t')
 
 valuesDoNotStep : forall {ty : Type} {f : TypeEnv} {s1 s2 : State f} -> (v : Value ty) (t : Term ty) -> Step s1 ⌜ v ⌝  s2 t -> Empty
 valuesDoNotStep vtrue t ()
@@ -321,4 +321,15 @@ data HoareTriple : {ty : Type} {f : TypeEnv} -> (State f -> Bool) -> Term ty -> 
   triple : {ty : Type} {f : TypeEnv} {s s' : State f} {v : Value ty} -> (p : State f -> Bool) -> (t : Term ty) -> (q : State f -> Bool) -> (Steps s t s' ⌜ v ⌝ -> Valid p s -> Valid q s') -> HoareTriple p t q
 
 PreStrengthening : {ty : Type} {f : TypeEnv} {t : Term ty} {p p' q : State f -> Bool} -> HoareTriple p t q -> ({s : State f} -> Valid p' s -> Valid p s) -> HoareTriple p' t q
-PreStrengthening {ty} {f} {t} {p} {p'} {q} (triple {.ty} {.f} {s} {s'} {v} .p .t .q y) g = triple {ty} {f} {s} {s'} {v} p' t q (λ steps valid -> y steps (g {s} valid))
+PreStrengthening {ty} {f} {t} {p} {p'} {q} (triple {.ty} {.f} {s} {s'} {v} .p .t .q y) g = triple {ty} {f} {s} {s'} {v} p' t q (λ steps valid -> y steps (g valid))
+
+PostWeakening : {ty : Type} {f : TypeEnv} {t : Term ty} {p q q' : State f -> Bool} -> HoareTriple p t q -> ({s : State f} -> Valid q s -> Valid q' s) -> HoareTriple p t q'
+PostWeakening {ty} {f} {t} {p} {q} {q'} (triple {.ty} {.f} {s} {s'} {v} .p .t .q y) g = triple {ty} {f} {s} {s'} {v} p t q' (λ steps valid -> g (y steps valid))
+
+-- The hoare rule for sequencing side effects
+Sequencing : {f : TypeEnv} {t1 t2 : Term <>} {p q r : State f -> Bool} -> HoareTriple p t1 q -> HoareTriple q t2 r -> HoareTriple p (t1 % t2) r
+Sequencing {f} {t1} {t2} {p} {q} {r} (triple {.<>} {.f} {s} {s'} .p .t1 .q y) (triple {.<>} {.f} .q .t2 .r y') = triple p (t1 % t2) r y''
+  where
+  y'' : {s s' : State f} {t1 t2 : Term <>} -> Steps s (t1 % t2) s' <> -> Valid p s -> Valid r s
+  y'' (Cons E-% y1) v = {!!}
+  y'' (Cons (È-%-Fst y0) y1) v = {!!}
