@@ -1,0 +1,17 @@
+
+ R Allocatie
+ R Hoare types
+ W Hoare logic
+    W sequence
+    W theorems mbt mutation operaties
+ ? While
+ ? Denotational semantics
+    ? equivalantie met small step
+ ? Normalisation
+ ? Type safety (progress)
+
+
+Niet:
+ - big step
+ - fixpoints
+ - separation
