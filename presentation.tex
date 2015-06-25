@@ -1,0 +1,131 @@
+\documentclass{beamer}
+\usepackage{listings}
+\usepackage{xcolor}
+%\usepackage[utf8]{inputenc}
+\lstset{language=haskell}
+\lstset{moredelim=**[is][\color{blue}]{@}{@}}
+\begin{document}
+\title{Semantics of mutable state}
+\author{Koen Wermer \and Robert Hensing}
+\frame{\titlepage}
+\frame{\frametitle{What}
+
+\begin{itemize}
+ \item A model language with mutable state
+ \item Hoare type system
+ \item Small step semantics
+ \item Type safety proof
+ \item Normalization proof
+ \item Some neat Hoare logic theorems
+\end{itemize}
+
+}
+
+\begin{frame}[fragile]
+\frametitle{Basic semantics for mutable state (1)}
+
+\begin{lstlisting}
+data Type : Set where
+  ...
+  <>      : Type
+  POINTER : Type -> Type
+\end{lstlisting}
+
+\end{frame}
+
+\begin{frame}
+\frametitle{Basic semantics for mutable state (2)}
+
+New terms
+
+\begin{itemize}
+  \item create cell with value
+  \item update cell with value
+  \item read cell value
+  \item redirect pointer to other cell
+  \item ;
+  \item the actual cell
+\end{itemize}
+\end{frame}
+
+\begin{frame}[fragile]
+\frametitle{Basic semantics for mutable state (3)}
+\begin{lstlisting}
+data State : TypeEnv -> Set where
+  state : (f : TypeEnv) -> ((p : Pointer)
+             -> (Term (f p))) -> State f
+
+data Step  : {ty : Type} @{f : TypeEnv}@
+               -> @State f@ -> Term ty
+               -> @State f@ -> Term ty -> Set where
+     ...
+\end{lstlisting}
+
+\end{frame}
+
+\begin{frame}\frametitle{Type system}
+
+Hoare logic
+
+\[ 
+   \{ P \}\ c\ \{ Q \}
+\]
+
+\only<2>{
+\[
+\frac{\{ P \}\ c_1\ \{ Q \},\ \ \{ Q \}\ c_2\ \{ R \}  }
+     {\{ P \}\ c_1\ ;\ c_2\ \{ R \}  }
+\]
+}
+\end{frame}
+
+
+\begin{frame}\frametitle{Type system}
+
+`Hoare Type Theory'
+
+\[ 
+   \{ P \}\ c:t\ \{ Q \}
+\]
+
+\[
+\frac{\{ P \}\ c_1:t_1\ \{ Q \},\ \ \{ Q \}\ c_2:t_2\ \{ R \}  }
+     {\{ P \}\ (c_1;c_2)\ :\ t_2\ \{ R \}  }
+\]
+\end{frame}
+
+\begin{frame}\frametitle{Type system}
+
+Separation
+
+``Modular reasoning''
+
+\[
+\frac{\{ P \}\ c\ \{ Q \},\ \ modifiedBy(c) \cap freeVars(R) = \emptyset  }
+     {\{ P * R \}\ c\ \{ Q * R \}  }
+\]
+\end{frame}
+
+\begin{frame}\frametitle{Limitations}
+
+\begin{itemize}
+ \item Our work: No $\lambda$
+ \item `Fundamental': No programs in heap\ \ (or non-termination)
+ \item Practical: Proving stuff is hard :)
+\end{itemize}
+
+\end{frame}
+
+\begin{frame}\frametitle{Questions?}
+
+Literature
+\begin{itemize}
+\item Swierstra, Wouter. A functional specification of effects. Diss. University of Nottingham, 2009.
+\item Pierce, Benjamin C. Types and programming languages. MIT press, 2002.
+\item Nanevski, Aleksandar, Greg Morrisett, and Lars Birkedal. Hoare type theory, polymorphism and separation. Journal of Functional Programming 18.5-6 (2008): 865-911.
+\item John C. Reynolds. Separation Logic: A Logic for Shared Mutable Data Structures. LICS 2002.
+\end{itemize}
+
+\end{frame}
+
+\end{document}
