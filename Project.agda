@@ -89,7 +89,7 @@ data Term : Type -> Set where
   var           : {ty : Type} -> Nat -> Term (POINTER ty)
 
   -- Create a new cell with an initial value REPLACED BY VAR
-  --ref           : {ty : Type} -> Term ty -> Term (POINTER ty)
+  ref           : {ty : Type} -> Term ty -> Term (POINTER ty)
 
   -- Redirecting a pointer to another cell, similar to "=" in the book
   _=>_          : {ty : Type} -> Term (POINTER ty) -> Term (POINTER ty) -> Term <>
@@ -110,37 +110,59 @@ TypeEnv = Pointer -> Type
 -- The environment returns the actual expressions, and is given a type environment that matches the expressions
 -- The state consists of a matching environment and type environment
 data State : TypeEnv -> Set where
-  state : (f : TypeEnv) -> ((p : Pointer) -> (Term (f p))) -> State f
+  state : (f : TypeEnv) -> (pointerLimit : Pointer) -> ((p : Pointer) -> (Term (f p))) -> State f
 
 -- The types of values that will be stored can of course not be known beforehand,
 -- therefore we proof that we have an initial state that is valid for every possible typing
 -- Of course we can't get values from empty cells, so we just recurse
 -- (In practice, getting an error would be prefered over your program getting stuck in a loop, but for this project it doesn't matter)
 initState : forall {f} -> State f
-initState {f} = state f (λ p -> ! (var p))
+initState {f} = state f Zero (λ p -> ! (var p))
 
 -- Some usefull functions on state:
 -- Retrieves the values of a given pointer from the state, and rewrites the type using equational reasoning
 getEq : {typeOf : TypeEnv} {ty : Type} -> State typeOf -> (n : Pointer) -> typeOf n == ty -> Term ty
-getEq {typeOf} (state .typeOf env) n refl = env n
+getEq {typeOf} (state .typeOf _ env) n refl = env n
 
 -- Redirects a pointer to another cell
 redirect : {typeOf : TypeEnv} -> (n : Pointer) -> (m : Pointer) -> typeOf n == typeOf m -> State typeOf -> State typeOf
-redirect n m r (state typeOf env) = state typeOf env'
+redirect n m r (state typeOf pointerLimit env) = state typeOf pointerLimit env'
   where
   env' : (p : Pointer) -> (Term (typeOf p))
   env' p with p `eq` n
   env' p | Left t with trans (cong typeOf t) r
-  env' .n | Left refl | y = getEq (state typeOf env) m (symm y)
+  env' .n | Left refl | y = getEq (state typeOf pointerLimit env) m (symm y)
   env' p | Right _ = env p
 
 -- Stores an expression in a cell
 store : {ty : Type} {typeOf : TypeEnv} -> (n : Pointer) -> (t : Term ty) -> typeOf n == ty -> State typeOf -> State typeOf
-store n t refl (state typeOf env) = state typeOf env'
+store n t refl (state typeOf pointerLimit env) = state typeOf pointerLimit env'
   where
   env' : (p : Pointer) -> (Term (typeOf p))
   env' p with p `eq` n
   env' .n | Left refl = t
+  env' p | Right _ = env p
+
+allocType : Type -> Pointer -> TypeEnv -> TypeEnv
+allocType ty maxPointer tyEnv p with p `eq` maxPointer
+allocType ty maxPointer tyEnv .maxPointer | Left refl = ty
+allocType ty maxPointer tyEnv p | Right x = tyEnv p
+
+getPointerLimit : ∀ {typeEnv} -> State typeEnv -> Pointer
+getPointerLimit (state _ pointerLimit _) = pointerLimit
+
+alloc : {ty : Type} {typeOf : TypeEnv} -> (t : Term ty) -> (s : State typeOf) -> Tuple (Term (POINTER ty)) (State (allocType ty (getPointerLimit s) typeOf))
+alloc {ty} t (state typeOf pointerLimit env) = var this , state (allocType ty pointerLimit typeOf) pointerLimit env'
+  where
+  this = pointerLimit
+  pointerLimit' = Succ this
+  typeOf' : TypeEnv
+  typeOf' p with p `eq` this
+  typeOf' ._ | Left refl = ty
+  typeOf' p | Right _ = typeOf p
+  env' : (p : Pointer) -> (Term ((allocType ty this typeOf) p))
+  env' p with p `eq` this
+  env' ._ | Left refl = ! var this
   env' p | Right _ = env p
 
 -- Gets an expression from a cell
@@ -167,12 +189,19 @@ natTerm (Succ k) = succ (natTerm k)
 ⌜ vvar n ⌝ = var n
 ⌜ vnothing ⌝ = <>
 
+-- Evidence type that shows a certain term represents a value.
+data Is-value {ty : Type} : Term ty -> Set where
+  is-value : forall v -> Is-value ⌜ v ⌝
+
+toVal : forall {ty} -> (t : Term ty) -> Is-value t -> Value ty
+toVal .(⌜ v ⌝) (is-value v) = v
+
 
 -------------------------------------------------------------------------------
 ----------------------             Small-step            ----------------------
 -------------------------------------------------------------------------------
 
-data Step  : {ty : Type} {f : TypeEnv} -> State f -> Term ty → State f -> Term ty → Set where
+data Step  : {ty : Type} {f f' : TypeEnv} -> State f -> Term ty → State f' -> Term ty → Set where
   -- Pure thingies leave the state unchanged, but may contain non-pure expressions and propagate the changes made by those
   E-If-True : {f : TypeEnv} {s : State f} {ty : Type} {t1 t2 : Term ty} -> Step s (if true then t1 else t2) s t1
   E-If-False : {f : TypeEnv} {s : State f} {ty : Type} {t1 t2 : Term ty} -> Step s (if false then t1 else t2) s t2
@@ -180,8 +209,8 @@ data Step  : {ty : Type} {f : TypeEnv} -> State f -> Term ty → State f -> Term
     Step s (if t1 then t2 else t3) s' (if t1' then t2 else t3)
   E-Succ       : {f : TypeEnv} {s s' : State f} {t t' : Term NAT} -> Step {NAT} s t s' t' -> Step {NAT} s (succ t) s' (succ t')
   E-IsZeroZero : {f : TypeEnv} {s : State f} -> Step s (iszero zero) s true
-  E-IsZeroSucc : {f : TypeEnv} {s : State f} {v : Value NAT} -> Step s (iszero (succ ⌜ v ⌝)) s false
-  E-IsZero     : {f : TypeEnv} {s s' : State f} {t t' : Term NAT} -> Step s t s' t' -> Step s (iszero t) s' (iszero t')
+  E-IsZeroSucc : {f : TypeEnv} {s : State f} {vt : Term NAT}{isv : Is-value vt} -> Step s (iszero (succ vt)) s false
+  E-IsZero     : {f f' : TypeEnv} {s : State f} {s' : State f'} {t t' : Term NAT} -> Step s t s' t' -> Step s (iszero t) s' (iszero t')
   -- Pointer thingies may use or change the state
   -- We can redirect pointers to other cells iff the the types match. Both arguments of => must be completely evaluated
   E-=> : {typeOf : TypeEnv} {s : State typeOf} {ty : Type} {n m : Nat} -> (r : typeOf n == ty) (r' : typeOf m == ty) -> Step s (_=>_ {ty} (var n) (var m)) (redirect n m (trans r (symm r')) s) <>
@@ -201,69 +230,125 @@ data Step  : {ty : Type} {f : TypeEnv} -> State f -> Term ty → State f -> Term
   E-! : {typeOf : TypeEnv} {s : State typeOf} {n : Nat} -> Step s (! (var n)) s (get s n)
   -- We must first evaluate the pointer expression to normal form before we can dereference it
   E-!-Fst : {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t t' : Term (POINTER ty)} -> Step s t s' t' -> Step s (! t) s' (! t')
+  -- Allocating just puts the given expression in the state
+  E-Ref : {typeOf : TypeEnv} {s : State typeOf} {ty : Type} {t : Term ty} {n : Nat} {s' : State (allocType ty (getPointerLimit s) typeOf)} {t' : Term (POINTER ty)} -> s' == (snd (alloc t s)) -> t' == (fst (alloc t s)) -> Is-value t ->  Step s (ref t) s' (fst (alloc t s))
+  -- We must first evaluate the expression to normal form before we can dereference it
+  E-Ref-Fst : {typeOf : TypeEnv} {s s' : State typeOf} {ty : Type} {t t' : Term (POINTER ty)} -> Step s t s' t' -> Step s (ref t) s' (ref t')
+  -- 
 
-valuesDoNotStep : forall {ty : Type} {f : TypeEnv} {s1 s2 : State f} -> (v : Value ty) (t : Term ty) -> Step s1 ⌜ v ⌝  s2 t -> Empty
+valuesDoNotStep : forall {ty : Type} {f f' : TypeEnv} {s1 : State f} {s2 : State f'} -> (v : Value ty) (t : Term ty) -> Step s1 ⌜ v ⌝  s2 t -> Empty
 valuesDoNotStep vtrue t ()
 valuesDoNotStep vfalse t ()
-valuesDoNotStep (vnat x) t step = lemma x t step
+valuesDoNotStep (vnat x) t step = lemma x step
   where
-  lemma : forall {typeOf : TypeEnv} {s s' : State typeOf} -> (n : Nat) -> (t : Term NAT) -> Step s (natTerm n) s' t -> Empty
-  lemma Zero t ()
-  lemma {f} {s} {s'} (Succ n) .(succ t') (E-Succ {.f} {.s} {.s'} {.( ⌜ vnat n ⌝)} {t'} step) = lemma n t' step
+  lemma : forall {f f' : TypeEnv} {s : State f} {s' : State f'} -> (n : Nat) -> {t : Term NAT} -> Step s (natTerm n) s' t -> Empty
+  lemma Zero ()
+  lemma (Succ n) (E-Succ step) = lemma n step
 valuesDoNotStep (vvar n) t ()
 valuesDoNotStep vnothing t ()
 
+is-valueDoesNotStep : forall {ty : Type} {f f' : TypeEnv} {s1 : State f} {s2 : State f'} -> (t t' : Term ty) -> Is-value t -> Step s1 t s2 t' -> Empty
+is-valueDoesNotStep .true t' (is-value vtrue) ()
+is-valueDoesNotStep .false t' (is-value vfalse) ()
+is-valueDoesNotStep .zero t' (is-value (vnat Zero)) ()
+is-valueDoesNotStep .(succ (natTerm x)) ._ (is-value (vnat (Succ x))) (E-Succ s) = is-valueDoesNotStep (natTerm x) _ (is-value (vnat x)) s
+is-valueDoesNotStep .(var x) t' (is-value (vvar x)) ()
+is-valueDoesNotStep .<> t' (is-value vnothing) ()
+
+deterministicTypeEnv : forall {ty} {f f' f'' : TypeEnv} {s : State f}{s' : State f'}{s'' : State f''} {t t' t'' : Term ty} -> Step s t s' t' -> Step s t s'' t'' → f' == f''
+deterministicTypeEnv {t = true} () s2
+deterministicTypeEnv {t = false} () s2
+deterministicTypeEnv {t = if .true then t₁ else t₂} E-If-True E-If-True = refl
+deterministicTypeEnv {t = if .true then t₁ else t₂} E-If-True (E-If-If ())
+deterministicTypeEnv {t = if .false then t₁ else t₂} E-If-False E-If-False = refl
+deterministicTypeEnv {t = if .false then t₁ else t₂} E-If-False (E-If-If ())
+deterministicTypeEnv {t = if .true then t₁ else t₂} (E-If-If ()) E-If-True
+deterministicTypeEnv {t = if .false then t₁ else t₂} (E-If-If ()) E-If-False
+deterministicTypeEnv {t = if t then t₁ else t₂} (E-If-If s1) (E-If-If s2) = deterministicTypeEnv s1 s2
+deterministicTypeEnv {t = zero} () s2
+deterministicTypeEnv {t = succ t} (E-Succ s1) (E-Succ s2) = deterministicTypeEnv s1 s2
+deterministicTypeEnv {t = iszero .zero} E-IsZeroZero E-IsZeroZero = refl
+deterministicTypeEnv {t = iszero .zero} E-IsZeroZero (E-IsZero ())
+deterministicTypeEnv {t = iszero (succ x)} E-IsZeroSucc E-IsZeroSucc = refl
+deterministicTypeEnv {t = iszero (succ x)} E-IsZeroSucc (E-IsZero (E-Succ s2)) = refl
+deterministicTypeEnv {t = iszero .zero} (E-IsZero ()) E-IsZeroZero
+deterministicTypeEnv {t = iszero (succ x)} (E-IsZero (E-Succ s1)) (E-IsZeroSucc) = refl
+deterministicTypeEnv {t = iszero t} (E-IsZero s1) (E-IsZero s2) = deterministicTypeEnv s1 s2
+deterministicTypeEnv {t = var x} () s2
+deterministicTypeEnv {t = ref t} (E-Ref x x₁ x₂) (E-Ref x₃ x₄ x₅) = refl
+deterministicTypeEnv {t = ref t} (E-Ref x x₁ x₂) (E-Ref-Fst s2) = contradiction (is-valueDoesNotStep t _ x₂ s2)
+deterministicTypeEnv {t = ref t} (E-Ref-Fst s1) (E-Ref x x₁ x₂) = contradiction (is-valueDoesNotStep t _ x₂ s1)
+deterministicTypeEnv {t = ref t} (E-Ref-Fst s1) (E-Ref-Fst s2) = deterministicTypeEnv s1 s2
+deterministicTypeEnv {t = ._ => ._} (E-=> r r') (E-=> r₁ r'') = refl
+deterministicTypeEnv {t = ._ => ._} (E-=> r r') (E-=>-Fst ())
+deterministicTypeEnv {t = ._ => ._} (E-=> r r') (E-=>-Snd ())
+deterministicTypeEnv {t = ._ => ._} (E-=>-Fst ()) (E-=> r r')
+deterministicTypeEnv {t = ._ => ._} (E-=>-Fst s1) (E-=>-Fst s2) = deterministicTypeEnv s1 s2
+deterministicTypeEnv {t = ._ => ._} (E-=>-Fst ()) (E-=>-Snd s2)
+deterministicTypeEnv {t = ._ => ._} (E-=>-Snd ()) (E-=> r r')
+deterministicTypeEnv {t = ._ => ._} (E-=>-Snd s1) (E-=>-Fst ())
+deterministicTypeEnv {t = ._ => ._} (E-=>-Snd s1) (E-=>-Snd s2) = deterministicTypeEnv s1 s2
+deterministicTypeEnv {t = ._ := ._} (E-:= r) (E-:= r₁) = refl
+deterministicTypeEnv {t = ._ := ._} (E-:= r) (E-:=-Fst ())
+deterministicTypeEnv {t = ._ := ._} (E-:=-Fst ()) (E-:= r)
+deterministicTypeEnv {t = ._ := ._} (E-:=-Fst s1) (E-:=-Fst s2) = deterministicTypeEnv s1 s2
+deterministicTypeEnv {t = .<> % ._} E-% E-% = refl
+deterministicTypeEnv {t = .<> % ._} E-% (È-%-Fst ())
+deterministicTypeEnv {t = .<> % ._} (È-%-Fst ()) E-%
+deterministicTypeEnv {t = ._ % ._} (È-%-Fst s1) (È-%-Fst s2) = deterministicTypeEnv s1 s2
+deterministicTypeEnv {t = ! ._} E-! E-! = refl
+deterministicTypeEnv {t = ! ._} E-! (E-!-Fst ())
+deterministicTypeEnv {t = ! ._} (E-!-Fst s1) E-! = refl
+deterministicTypeEnv {t = ! ._} (E-!-Fst s1) (E-!-Fst s2) = deterministicTypeEnv s1 s2
+deterministicTypeEnv {t = <>} () s2
+
 -- Proving the small step semantics are deterministic
-deterministic : forall {ty} {f : TypeEnv} {s s' s'' : State f} {t t' t'' : Term ty} -> Step s t s' t' -> Step s t s'' t'' → t' == t''
-deterministic E-If-True E-If-True = refl
-deterministic E-If-True (E-If-If ())
-deterministic E-If-False E-If-False = refl
-deterministic E-If-False (E-If-If ())
-deterministic (E-If-If ()) E-If-True
-deterministic (E-If-If ()) E-If-False
-deterministic (E-If-If step1) (E-If-If step2) = cong (λ x -> if x then _ else _) (deterministic step1 step2)
-deterministic (E-Succ steps1) (E-Succ steps2) = cong succ (deterministic steps1 steps2)
-deterministic E-IsZeroZero E-IsZeroZero = refl
-deterministic E-IsZeroZero (E-IsZero ())
-deterministic (E-IsZeroSucc {_} {_} {v}) step2 = lemma v _ step2
-  where
-  lemma : (v : Value NAT) (t : Term BOOL) -> Step _ (iszero (succ ⌜ v ⌝)) _ t -> false == t
-  lemma (vnat x) true ()
-  lemma (vnat x) false step = refl
-  lemma (vnat x) (if t then t₁ else t₂) ()
-  lemma (vnat x) (iszero ._) (E-IsZero (E-Succ step)) = contradiction (valuesDoNotStep (vnat x) _ step)
-  lemma (vnat x) (! p) ()
-deterministic (E-IsZero ()) E-IsZeroZero
-deterministic step1 (E-IsZeroSucc {_} {_} {v}) = lemma v _ step1
-  where
-  lemma : (v : Value NAT) (t : Term BOOL) -> Step _ (iszero (succ ⌜ v ⌝)) _ t -> t == false
-  lemma (vnat x) true ()
-  lemma (vnat x) false step = refl
-  lemma (vnat x) (if t then t₁ else t₂) ()
-  lemma (vnat x) (iszero ._) (E-IsZero (E-Succ step)) = contradiction (valuesDoNotStep (vnat x) _ step)
-  lemma (vnat x) (! p) ()
-deterministic (E-IsZero step1) (E-IsZero step2) = cong iszero (deterministic step1 step2)
-deterministic (E-=> r r') (E-=> r0 r1) = refl
-deterministic (E-=> r r') (E-=>-Fst ())
-deterministic (E-=> r r') (E-=>-Snd ())
-deterministic (E-=>-Fst ()) (E-=> r r')
-deterministic (E-=>-Fst step1) (E-=>-Fst step2) = cong _ (deterministic step1 step2)
-deterministic (E-=>-Fst ()) (E-=>-Snd step2)
-deterministic (E-=>-Snd ()) (E-=> r r')
-deterministic (E-=>-Snd step1) (E-=>-Fst ())
-deterministic (E-=>-Snd step1) (E-=>-Snd step2) = cong _ (deterministic step1 step2)
-deterministic (E-:= r) (E-:= r') = refl
-deterministic (E-:= r) (E-:=-Fst ())
-deterministic (E-:=-Fst ()) (E-:= r)
-deterministic (E-:=-Fst step1) (E-:=-Fst step2) = cong _ (deterministic step1 step2)
-deterministic E-% E-% = refl
-deterministic E-% (È-%-Fst ())
-deterministic (È-%-Fst ()) E-%
-deterministic (È-%-Fst step1) (È-%-Fst step2) = cong _ (deterministic step1 step2)
-deterministic E-! E-! = refl
-deterministic E-! (E-!-Fst ())
-deterministic (E-!-Fst ()) E-!
-deterministic (E-!-Fst step1) (E-!-Fst step2) = cong _ (deterministic step1 step2)
+deterministic : forall {ty} {f f' f'' : TypeEnv} {s : State f}{s' : State f'}{s'' : State f''} {t t' t'' : Term ty} -> Step s t s' t' -> Step s t s'' t'' → t' == t''
+deterministic {t = true} ()
+deterministic {t = false} ()
+deterministic {t = if .true then t₁ else t₂} E-If-True E-If-True = refl
+deterministic {t = if .true then t₁ else t₂} E-If-True (E-If-If ())
+deterministic {t = if .false then t₁ else t₂} E-If-False E-If-False = refl
+deterministic {t = if .false then t₁ else t₂} E-If-False (E-If-If ())
+deterministic {t = if .true then t₁ else t₂} (E-If-If ()) E-If-True
+deterministic {t = if .false then t₁ else t₂} (E-If-If ()) E-If-False
+deterministic {t = if t then t₁ else t₂} (E-If-If s1) (E-If-If s2) = cong _ (deterministic s1 s2)
+deterministic {t = zero} ()
+deterministic {t = succ t} (E-Succ s1) (E-Succ s2) = cong _ (deterministic s1 s2)
+deterministic {t = iszero .zero} E-IsZeroZero E-IsZeroZero = refl
+deterministic {t = iszero .zero} E-IsZeroZero (E-IsZero ())
+deterministic {t = iszero ._} E-IsZeroSucc E-IsZeroSucc = refl
+deterministic {t = iszero .(succ ⌜ v ⌝)} (E-IsZeroSucc {isv = is-value v}) (E-IsZero (E-Succ s2)) = contradiction (valuesDoNotStep v _ s2)
+deterministic {t = iszero .zero} (E-IsZero ()) E-IsZeroZero
+deterministic {t = iszero .(succ ⌜ v ⌝)} (E-IsZero (E-Succ s1)) (E-IsZeroSucc {isv = is-value v}) = contradiction (valuesDoNotStep v _ s1)
+deterministic {t = iszero t} (E-IsZero s1) (E-IsZero s2) = cong _ (deterministic s1 s2)
+deterministic {t = var x} ()
+deterministic {t = ref t} (E-Ref x x₁ x₂) (E-Ref x₃ x₄ x₅) = refl
+deterministic {t = ref t} (E-Ref x x₁ x₂) (E-Ref-Fst s2) = contradiction (is-valueDoesNotStep t _ x₂ s2)
+deterministic {t = ref t} (E-Ref-Fst s1) (E-Ref x x₁ x₂) = contradiction (is-valueDoesNotStep t _ x₂ s1)
+deterministic {t = ref t} (E-Ref-Fst s1) (E-Ref-Fst s2) = cong _ (deterministic s1 s2)
+deterministic {t = ._ => ._} (E-=> r r') (E-=> r₁ r'') = refl
+deterministic {t = ._ => ._} (E-=> r r') (E-=>-Fst ())
+deterministic {t = ._ => ._} (E-=> r r') (E-=>-Snd ())
+deterministic {t = ._ => ._} (E-=>-Fst ()) (E-=> r r')
+deterministic {t = ._ => ._} (E-=>-Fst s1) (E-=>-Fst s2) = cong _ (deterministic s1 s2)
+deterministic {t = ._ => ._} (E-=>-Fst ()) (E-=>-Snd s2)
+deterministic {t = ._ => ._} (E-=>-Snd ()) (E-=> r r')
+deterministic {t = ._ => ._} (E-=>-Snd s1) (E-=>-Fst ())
+deterministic {t = ._ => ._} (E-=>-Snd s1) (E-=>-Snd s2) = cong _ (deterministic s1 s2)
+deterministic {t = ._ := ._} (E-:= r) (E-:= r₁) = refl
+deterministic {t = ._ := ._} (E-:= r) (E-:=-Fst ())
+deterministic {t = ._ := ._} (E-:=-Fst ()) (E-:= r)
+deterministic {t = ._ := ._} (E-:=-Fst s1) (E-:=-Fst s2) = cong _ (deterministic s1 s2)
+deterministic {t = .<> % ._} E-% E-% = refl
+deterministic {t = .<> % ._} E-% (È-%-Fst ())
+deterministic {t = .<> % ._} (È-%-Fst ()) E-%
+deterministic {t = ._ % ._} (È-%-Fst s1) (È-%-Fst s2) = cong _ (deterministic s1 s2)
+deterministic {t = ! ._} E-! E-! = refl
+deterministic {t = ! ._} E-! (E-!-Fst ())
+deterministic {t = ! ._} (E-!-Fst ()) E-!
+deterministic {t = ! ._} (E-!-Fst s1) (E-!-Fst s2) = cong _ (deterministic s1 s2)
+deterministic {t = <>} ()
 
 -- Types are preserved during evaluation
 preservation : forall {ty : Type} {f : TypeEnv} {s s' : State f} -> (t t' : Term ty) -> Step s t s' t' -> ty == ty
@@ -276,13 +361,6 @@ data Red {ty : Type} (t : Term ty) : Set where
 -- Normal forms, i.e. irreducible terms
 NF : ∀ {ty} -> Term ty → Set
 NF t = Not (Red t)
-
--- Evidence type that shows a certain term represents a value.
-data Is-value {ty : Type} : Term ty -> Set where
-  is-value : forall v -> Is-value ⌜ v ⌝
-
-toVal : forall {ty} -> (t : Term ty) -> Is-value t -> Value ty
-toVal .(⌜ v ⌝) (is-value v) = v
 
 
 --------------------------------------------------------------------------------
