@@ -7,37 +7,6 @@ open import Definitions
 open import SmallStepSemantics
 
 --------------------------------------------------------------------------------
--------------------------  Sequences of small steps  ---------------------------
---------------------------------------------------------------------------------
-
--- A sequence of steps that can be applied in succession
-data Steps {ty : Type} {f : TypeEnv} : State f -> Term ty -> State f -> Term ty -> Set where
-  Nil : forall {s t} -> Steps s t s t
-  Cons : forall {s1 s2 s3 t1 t2 t3} -> Step s1 t1 s2 t2 -> Steps s2 t2 s3 t3 -> Steps s1 t1 s3 t3
-
--- Single-step sequence
-[_] : forall {ty : Type} {f : TypeEnv} {s1 s2 : State f} {t1 t2 : Term ty} -> Step s1 t1 s2 t2 -> Steps s1 t1 s2 t2
-[_] x = Cons x Nil
-  
--- Concatenation.
-_++_ : forall {ty : Type} {f : TypeEnv} {s1 s2 s3 : State f} {t1 t2 t3 : Term ty} -> Steps s1 t1 s2 t2 -> Steps s2 t2 s3 t3 -> Steps s1 t1 s3 t3
-Nil ++ stps' = stps'
-Cons x stps ++ stps' = Cons x (stps ++ stps')
-
-infixr 5 _++_
-
-uniqueness-of-normal-forms-and-end-states :
-  ∀ {ty tyEnv s s1 s2} {t t₁ t₂ : Term ty} →
-  Steps {ty} {tyEnv} s t s1 t₁ → Steps s t s2 t₂ → NF t₁ → NF t₂ → (t₁ , s1) == (t₂ , s2)
-uniqueness-of-normal-forms-and-end-states Nil Nil nf1 nf2 = refl
-uniqueness-of-normal-forms-and-end-states Nil (Cons x s3) nf1 nf2 = contradiction (nf1 (Reduces x))
-uniqueness-of-normal-forms-and-end-states (Cons x s4) Nil nf1 nf2 = contradiction (nf2 (Reduces x))
-uniqueness-of-normal-forms-and-end-states (Cons x s4) (Cons y s6) nf1 nf2 with deterministic-term x y , deterministic-TypeEnv x y
-uniqueness-of-normal-forms-and-end-states (Cons x s5) (Cons y s6) nf1 nf2 | refl , refl with deterministic-state x y
-uniqueness-of-normal-forms-and-end-states (Cons x s5) (Cons y s6) nf1 nf2 | refl , refl | refl = uniqueness-of-normal-forms-and-end-states s5 s6 nf1 nf2 -- 
-
-
---------------------------------------------------------------------------------
 -------------------------------  Hoare logic  ----------------------------------
 --------------------------------------------------------------------------------
 
