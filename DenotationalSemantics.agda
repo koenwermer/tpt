@@ -16,6 +16,14 @@ vcond : ∀{f} {a : Set} -> DValue BOOL f → a → a → a
 vcond vtrue v2 v3 = v2
 vcond vfalse v2 v3 = v3
 
+vcond'' : ∀{f} {a b : Set₁} -> DValue BOOL f → a → a → a
+vcond'' vtrue v2 v3 = v2
+vcond'' vfalse v2 v3 = v3
+
+vcond' : ∀{f} {a b : Set} -> (c : DValue BOOL f) → a → b → (vcond'' c a b)
+vcond' vtrue v2 v3 = v2
+vcond' vfalse v2 v3 = v3
+
 vsucc : ∀{f} -> DValue NAT f -> DValue NAT f
 vsucc (vnat x) = vnat (Succ x)
 
@@ -59,20 +67,40 @@ map f x = do x' <- x then
 vvar-pointer : ∀{ty f} -> DValue (POINTER ty) f -> Pointer
 vvar-pointer (vvar x eq) = x
 
-⟦_⟧ : ∀ {ty f} -> Term ty -> St ty f f
+extend : ∀{ty} -> Term ty -> TypeEnv -> TypeEnv
+⟦_⟧ : ∀ {ty f} -> (t : Term ty) -> St ty f (extend t f)
+
+extend true f = f
+extend false f = f
+extend <> f = f
+extend zero f = f
+extend (var x) f = f
+extend (if t then t₁ else t₂) f = f
+extend (succ t) f = extend t f
+extend (iszero t) f = extend t f
+extend (ref t) f = extend t f -- TODO alloc
+extend (t => t₁) f = extend t₁ (extend t f)
+extend (t := t₁) f = extend t₁ (extend t f)
+extend (t % t₁) f = extend t₁ (extend t f)
+extend (! t) f = extend t f
+
 ⟦ true ⟧ = return vtrue
 ⟦ false ⟧ = return vfalse
 ⟦ zero ⟧ = return (vnat Zero)
 ⟦ <> ⟧ = return vnothing
-⟦ succ x ⟧ = map vsucc ⟦ x ⟧
-⟦ if x then x₁ else x₂ ⟧ = 
-   do x' <- ⟦ x ⟧ then
-   vcond x' ⟦ x₁ ⟧ ⟦ x₂ ⟧
-⟦ iszero x ⟧ = map viszero ⟦ x ⟧
-⟦ var x ⟧ = {!!}
+⟦ succ x ⟧ = {!!} map vsucc ⟦ {!!} ⟧
+⟦ if x then x₁ else x₂ ⟧ =
+   ⟦ x ⟧ >>= (\{
+     vtrue → ⟦ {!!} ⟧ ;
+     vfalse → ⟦ {!!} ⟧
+   })
+⟦_⟧ {f = f} (iszero x) with extend x f
+... | c = {! do x' <- ⟦ x ⟧ then
+            return (viszero x')!}
+⟦ var x ⟧ = return (vvar x {!!})
 ⟦ ref x ⟧ =
   do x' <- ⟦ x ⟧ then
-  New x' (λ p x₁ → {!return ?!})
+  {!!} New x' (λ p x₁ → {!Return (vvar ? ?)!})
 ⟦ x => x₁ ⟧ = 
   do x' <- ⟦ x ⟧ then
   do x₁' <- ⟦ x₁ ⟧ then
@@ -80,7 +108,7 @@ vvar-pointer (vvar x eq) = x
 ⟦ x := x₁ ⟧ = 
   do x' <- ⟦ x ⟧ then
   do x₁' <- ⟦ x₁ ⟧ then -- FIXME: the small step semantics should be eager here!
-  Write (vvar-pointer x') {!!} x₁' (return vnothing)
+  {!!} Write (vvar-pointer x') {!!} x₁' (return vnothing)
 ⟦ x % x₁ ⟧ = 
   do x' <- ⟦ x ⟧ then
   ⟦ x₁ ⟧

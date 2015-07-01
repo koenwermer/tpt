@@ -1,0 +1,109 @@
+\documentclass{article}
+\usepackage{listings}
+\usepackage{xcolor}
+%\usepackage[utf8]{inputenc}
+\lstset{language=haskell}
+\lstset{moredelim=**[is][\color{blue}]{@}{@}}
+\newcommand{\sectionref}[1]{section \ref{sec:#1}}
+\author{Koen Wermer 3705951 \and Robert Hensing 3361063}
+\title{Project report TPT}
+\begin{document}
+
+\maketitle
+
+\tableofcontents
+
+% TODO read project report instruction from site
+
+% TODO turn these into sections :)
+%
+%    Research question. Identify a clear and motivated question to answer.
+%    Research contribution. Develop an implementation or new knowledge to answer the research question.
+%    Research method. Discuss how you arrived at your answer.
+%    Related work. Compare your answer with other contributions.
+
+\section{Introduction}
+
+For this project, we set out to explore modeling of the semantics of a
+language with mutable state using Agda as a proof checker.
+
+We have extended a simplistic language with only boolean and number
+types and no lambda abstractions or any other sort of control flow
+structures.
+An inductive definition of the language is provided in
+\sectionref{def}.
+In doing so, and proving theorems about this language, we have
+encountered some challenges, which we will describe in
+\sectionref{findings}.
+Some possibilities we would have liked to explore, but were too
+ambitious given the time frame, are described in \sectionref{further}.
+
+\section{Language definition}\label{sec:def}
+
+% TODO
+
+\section{Findings}\label{sec:findings}
+
+\subsection{Small step semantics}
+
+\subsubsection{Deterministic result term}
+
+% TODO
+
+\subsubsection{Deterministic type of heap}
+
+% TODO
+% This proof was not really necessary, it seems...
+% Look into this again
+
+\subsubsection{Deterministic values of heap}
+
+% TODO
+
+\subsubsection{Uniqueness of results}
+
+% TODO
+
+\subsubsection{Normalization}
+
+% TODO or omit
+
+\subsection{Denotational semantics}
+
+Function representation of heap is not feasible, because the
+evaluation function needs to inspect it.
+
+First attempt:
+
+\begin{lstlisting}
+     [[_]] : forall {ty f f'} -> (t : Term ty) -> St ty f f'
+\end{lstlisting}
+
+This lets you express the rule for allocation, but it is problematic
+in other cases where a subexpression needs to be evaluated and
+nothing is known about f'
+
+% Second attempt:
+
+\begin{lstlisting}
+     [[_]] : forall {ty f} -> (t : Term ty) -> St ty f (extend t f)
+\end{lstlisting}
+where extend is an appropriate function
+
+This lets the caller know the environment after evaluating the
+subexpression, but it is not in constructor form and is therefore
+hard to reason with.
+
+\section{Hoare logic}
+
+% TODO (Koen)
+
+\section{Further work}\label{sec:further}
+
+Besides having theorems about Hoare logic, the language could benefit from a `Hoare type system'. Having such a type system will enhance the ability of the programmer to specify properties about stateful programs.
+% TODO refer to htt paper
+
+The implemented language model is not sufficient for any non-trivial programming task. It lacks mechanisms for abstraction or non-trivial control flow. It could be extended with a control flow structure such as a while loop or with a fix point operator. It is desirable to preserve the strong normalization property, but this will put extra constraints on the language.
+
+\end{document}
+
