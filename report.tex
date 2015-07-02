@@ -68,10 +68,19 @@ ambitious given the time frame, are described in \sectionref{further}.
 
 % TODO or omit
 
-\subsection{Denotational semantics}
+\subsection{Denotational semantics} % TODO review for latest progress
 
-Function representation of heap is not feasible, because the
-evaluation function needs to inspect it.
+For the denotational semantics we started with the monadic
+specification by Swierstra as a basis. The denotational semantics
+would build on the monad, translating terms to GADT-defined monadic
+values, which can in turn be evaluated.
+
+First, we adapted the monad to work with a heap that is defined by
+functions, instead of data types.
+
+% TODO Is it?:
+% Function representation of heap is not feasible, because the
+% evaluation function needs to inspect it.
 
 First attempt:
 
@@ -101,7 +110,7 @@ hard to reason with.
 \section{Further work}\label{sec:further}
 
 Besides having theorems about Hoare logic, the language could benefit from a `Hoare type system'. Having such a type system will enhance the ability of the programmer to specify properties about stateful programs.
-% TODO refer to htt paper
+% TODO refer to htt paper, bibtex?
 
 The implemented language model is not sufficient for any non-trivial programming task. It lacks mechanisms for abstraction or non-trivial control flow. It could be extended with a control flow structure such as a while loop or with a fix point operator. It is desirable to preserve the strong normalization property, but this will put extra constraints on the language.
 
