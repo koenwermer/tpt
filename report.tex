@@ -151,7 +151,31 @@ hard to reason with.
 
 \section{Hoare logic}
 
-% TODO (Koen)
+We added a datatype for Hoare triples. A Hoare triple consists of a 2 state predicates (functions from State to Bool) and a term, together with a validity proof, i.e. a function of the following type:
+
+\begin{lstlisting}
+	(s s' : State f) -> Steps s t s' ⌜ v ⌝ -> Valid p s -> Valid q s'
+\end{lstlisting}
+
+Valid is a data type that provides a proof that applying to predicate to the state results in "True". Using this datatype we proved the rule of pre-condition strengthening:
+
+\begin{lstlisting}
+	{ty : Type} {f : TypeEnv} {t : Term ty} {p p' q : State f -> Bool} -> HoareTriple p t q -> ({s : State f} -> Valid p' s -> Valid p s) -> HoareTriple p' t q
+\end{lstlisting}
+
+as well as post-condition weakening:
+
+\begin{lstlisting}
+	{ty : Type} {f : TypeEnv} {t : Term ty} {p q q' : State f -> Bool} -> HoareTriple p t q -> ({s : State f} -> Valid q s -> Valid q' s) -> HoareTriple p t q'
+\end{lstlisting}
+
+We also tried proving the sequencing rule:
+
+\begin{lstlisting
+	{f : TypeEnv} {t1 t2 : Term <>} {p q r : State f -> Bool} -> HoareTriple p t1 q -> HoareTriple q t2 r -> HoareTriple p (t1 % t2) r
+\end{lstlisting}
+
+However, this turned out be very hard to prove, because what the sequencing rule actually says is that if we want to create a Hoare triple for the term t1;t2, there exists a state during evaluation that we can use to combine the triples for t1 and t2. It seems intuitively clear that we arive in some state after evaluating t1, and the pre-condition for the second triple should hold for this state, but actually constructing this state and proving that the necessary properties hold is quite hard.
 
 \section{Further work}\label{sec:further}
 
