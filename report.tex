@@ -24,8 +24,13 @@
 
 \section{Introduction}
 
-For this project, we set out to explore modeling of the semantics of a
-language with mutable state using Agda as a proof checker.
+For this project, we have researched how a dependently typed language
+like Agda can be used to model the semantics of a language with
+mutable state using Agda as a proof checker.
+
+The focus of our contribution is on the practical aspect of modeling,
+to show and compare some possible approaches to modeling mutable state
+in Agda.
 
 We have extended a simplistic language with only boolean and number
 types and no lambda abstractions or any other sort of control flow
@@ -38,9 +43,43 @@ encountered some challenges, which we will describe in
 Some possibilities we would have liked to explore, but were too
 ambitious given the time frame, are described in \sectionref{further}.
 
+\section{Related work}
+
+\begin{description}
+\item[Swierstra]\hfill
+
+In his dissertation, Swierstra models some effects, of which, most prominently, mutable state. Agda is used to provide a total specification of effects, in order to be able to reason with it formally, which is a requirement for the implementation of Hoare Type Theory that is given.
+
+\item[Pierce]\hfill
+
+In this book includes an informal specification of mutable state.
+
+\item[Nanevski et al.]\hfill
+
+This paper introduces the concept of Hoare Type Theory, which allows tracking and enforcing of side effects. In the presence of polymorphism, it shows the soundness and compositionality of the theory, using separation logic to enable local reasoning.
+
+\end{description}
+
+
+
 \section{Language definition}\label{sec:def}
 
-% TODO
+The term language we have extended with mutable state consists of
+\begin{description}
+\item[true, false, zero, succ] are normal forms for boolean and number constants
+\item[if\_then\_else, iszero] are built-in functions
+\end{description}
+
+No abstraction or binding constructs are included.
+We have extended the language with
+\begin{description}
+\item[var] is a normal form for representing variables
+\item[ref] creates a new cell with an initial value
+\item[:=] assigns a value to an existing cell
+\item[!] reads a value from an existing cell
+\item[$\mathbf{=>}$] make a pointer reference another cell
+\item[\%] evaluate the first term, discarding its value and then evaluating the second term
+\end{description}
 
 \section{Findings}\label{sec:findings}
 
@@ -48,21 +87,28 @@ ambitious given the time frame, are described in \sectionref{further}.
 
 \subsubsection{Deterministic result term}
 
-% TODO
+We have proved that applying any two possible steps results in the
+same term.  This proof, like the other two `deterministic' proofs
+starts with case analysis on the possible steps. Although the type
+checker can automatically omit and check bogus combinations based on
+types, many cases remain.
 
 \subsubsection{Deterministic type of heap}
 
-% TODO
-% This proof was not really necessary, it seems...
-% Look into this again
+We have proved that applying any two possible steps results in the same heap shape.
+While this theorem seems useful for proving ``Deterministics values of heap'', there was actually no need to use it in that proof. It is a desirable property to have, so we have kept it.
 
 \subsubsection{Deterministic values of heap}
 
-% TODO
+We have proved that applying any two possible steps results in the
+same heap state.  To prove this lemma, we had to make many attempts to
+create type-correct pattern matches. In some cases we could not find a
+suitable order of pattern matches that type-checked, so we had to
+resort to case-specific lemma's.
 
 \subsubsection{Uniqueness of results}
 
-% TODO
+Using the `deterministic' lemma's, we were able to prove easily that terms result in unique tuples of normal forms and heap states.
 
 \subsubsection{Normalization}
 
@@ -113,6 +159,18 @@ Besides having theorems about Hoare logic, the language could benefit from a `Ho
 % TODO refer to htt paper, bibtex?
 
 The implemented language model is not sufficient for any non-trivial programming task. It lacks mechanisms for abstraction or non-trivial control flow. It could be extended with a control flow structure such as a while loop or with a fix point operator. It is desirable to preserve the strong normalization property, but this will put extra constraints on the language.
+
+\section{Literature}
+
+\begin{itemize}
+\item[] Swierstra, Wouter. A functional specification of effects. Diss. University of Nottingham, 2009.
+
+\item[] Pierce, Benjamin C. Types and programming languages. MIT press, 2002.
+
+\item[] Nanevski, Aleksandar, Greg Morrisett, and Lars Birkedal. Hoare type theory, polymorphism and separation. Journal of Functional Programming 18.5-6 (2008): 865-911.
+
+\item[] Reynolds, John C. Separation Logic: A Logic for Shared Mutable Data Structures. LICS 2002.
+\end{itemize}
 
 \end{document}
 
