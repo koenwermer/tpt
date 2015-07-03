@@ -13,14 +13,16 @@
 
 \tableofcontents
 
-% TODO read project report instruction from site
-
-% TODO turn these into sections :)
+% TODO turn these into sections?? I guess this is fixed now.
 %
 %    Research question. Identify a clear and motivated question to answer.
+%  somewhat obviously done in intro
 %    Research contribution. Develop an implementation or new knowledge to answer the research question.
+%  somewhat obviously done in intro
 %    Research method. Discuss how you arrived at your answer.
+%  somewhat obviously done in intro
 %    Related work. Compare your answer with other contributions.
+%  now has its own section after intro
 
 \section{Introduction}
 
@@ -110,10 +112,6 @@ resort to case-specific lemma's.
 
 Using the `deterministic' lemma's, we were able to prove easily that terms result in unique tuples of normal forms and heap states.
 
-\subsubsection{Normalization}
-
-% TODO or omit
-
 \subsection{Denotational semantics} % TODO review for latest progress
 
 For the denotational semantics we started with the monadic
@@ -124,21 +122,17 @@ values, which can in turn be evaluated.
 First, we adapted the monad to work with a heap that is defined by
 functions, instead of data types.
 
-% TODO Is it?:
-% Function representation of heap is not feasible, because the
-% evaluation function needs to inspect it.
-
 First attempt:
 
 \begin{lstlisting}
      [[_]] : forall {ty f f'} -> (t : Term ty) -> St ty f f'
 \end{lstlisting}
 
-This lets you express the rule for allocation, but it is problematic
+This allows to express the rule for allocation, but it is problematic
 in other cases where a subexpression needs to be evaluated and
 nothing is known about f'
 
-% Second attempt:
+Second attempt:
 
 \begin{lstlisting}
      [[_]] : forall {ty f} -> (t : Term ty) -> St ty f (extend t f)
@@ -147,7 +141,13 @@ where extend is an appropriate function
 
 This lets the caller know the environment after evaluating the
 subexpression, but it is not in constructor form and is therefore
-hard to reason with.
+somewhat hard to reason with. It did work better than the earlier
+attempt, but we were not able to finish it.
+
+In order to be able to implement the denotation semantics, we had to
+extend the representation of values to be able to reference the heap
+shape, because variable values have to carry the proof that they are
+consistent with a heap.
 
 \section{Hoare logic}
 
@@ -155,8 +155,7 @@ hard to reason with.
 
 \section{Further work}\label{sec:further}
 
-Besides having theorems about Hoare logic, the language could benefit from a `Hoare type system'. Having such a type system will enhance the ability of the programmer to specify properties about stateful programs.
-% TODO refer to htt paper, bibtex?
+Besides having theorems about Hoare logic, the language could benefit from a `Hoare type system'. Having such a type system will enhance the ability of the programmer to specify properties about stateful programs. Although Swierstra did include an implementation of a Hoare Type System, we did not find a chance to adapt that to fit our model.
 
 The implemented language model is not sufficient for any non-trivial programming task. It lacks mechanisms for abstraction or non-trivial control flow. It could be extended with a control flow structure such as a while loop or with a fix point operator. It is desirable to preserve the strong normalization property, but this will put extra constraints on the language.
 
